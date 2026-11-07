@@ -1,3 +1,15 @@
-// Drizzle schema definitions live here.
-// Intentionally empty for the initial project setup; tables are added later.
-export {};
+export * from "./schema/common";
+export * from "./schema/enums";
+export * from "./schema/categories";
+export * from "./schema/products";
+export * from "./schema/customers";
+export * from "./schema/carts";
+export * from "./schema/orders";
+export * from "./schema/payments";
+export * from "./schema/deliveries";
+export * from "./schema/marketing";
+export * from "./schema/admin";
+export * from "./schema/inventory";
+export * from "./schema/notifications";
+export * from "./schema/audit";
+export * from "./schema/relations";
