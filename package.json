@@ -1,0 +1,21 @@
+{
+  "name": "zayn-furnishings",
+  "version": "0.1.0",
+  "private": true,
+  "description": "US-only furniture e-commerce store (monorepo)",
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @zayn/shared build && concurrently -n web,api -c cyan,magenta \"pnpm --filter web dev\" \"pnpm --filter @zayn/api dev\"",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "start": "pnpm --filter @zayn/api start",
+    "db:generate": "pnpm --filter @zayn/api db:generate",
+    "db:migrate": "pnpm --filter @zayn/api db:migrate"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
