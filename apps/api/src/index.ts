@@ -18,6 +18,9 @@ app.use(
 );
 app.use(express.json());
 
+// Required behind Render's proxy so rate limiting sees the real client IP.
+app.set("trust proxy", 1);
+
 app.get("/", (_req, res) => {
   res.json({ name: API_NAME, status: "ok" });
 });

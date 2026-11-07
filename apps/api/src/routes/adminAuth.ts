@@ -39,6 +39,15 @@ const otpEmailRateLimiter = rateLimit({
   message: { error: "Too many requests. Please try again later." },
 });
 
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) {
+    return "***";
+  }
+
+  return `${local.slice(0, 1)}***@${domain}`;
+}
+
 function validateOtpRequest(
   req: Request,
   res: Response,
@@ -79,10 +88,23 @@ adminAuthRouter.post(
           .limit(1);
 
         if (admin) {
-          await getSupabaseAnon().auth.signInWithOtp({
+          const { error } = await getSupabaseAnon().auth.signInWithOtp({
             email,
             options: { shouldCreateUser: true },
           });
+
+          if (error) {
+            const maskedEmail = maskEmail(email);
+            const message = error.message
+              .replaceAll(email, maskedEmail)
+              .replaceAll(email.toLowerCase(), maskedEmail);
+
+            console.error("OTP send failed:", {
+              message,
+              status: error.status,
+              email: maskedEmail,
+            });
+          }
         }
       }
     } catch (error) {

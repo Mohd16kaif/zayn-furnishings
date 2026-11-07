@@ -60,6 +60,11 @@ export async function requireAdmin(
       return;
     }
 
+    if (!data.user.email_confirmed_at) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     userId = data.user.id;
     userEmail = data.user.email.toLowerCase();
   } catch (error) {
@@ -71,45 +76,59 @@ export async function requireAdmin(
     return;
   }
 
-  const [admin] = await db
-    .select()
-    .from(adminUsers)
-    .where(
-      and(
-        eq(adminUsers.isActive, true),
-        sql`lower(${adminUsers.email}) = ${userEmail}`,
-      ),
-    )
-    .limit(1);
+  try {
+    const [admin] = await db
+      .select()
+      .from(adminUsers)
+      .where(
+        and(
+          eq(adminUsers.isActive, true),
+          sql`lower(${adminUsers.email}) = ${userEmail}`,
+        ),
+      )
+      .limit(1);
 
-  if (!admin) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
+    if (!admin) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    if (admin.authUserId && admin.authUserId !== userId) {
+      console.warn("admin auth_user_id mismatch");
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    if (!admin.authUserId) {
+      await db
+        .update(adminUsers)
+        .set({ authUserId: userId, updatedAt: new Date() })
+        .where(eq(adminUsers.id, admin.id));
+
+      await db.insert(auditLog).values({
+        adminUserId: admin.id,
+        action: "admin.login",
+        entity: "admin_user",
+        entityId: admin.id,
+        details: { email: admin.email, firstLogin: true },
+      });
+    }
+
+    req.admin = {
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      role: admin.role,
+    };
+
+    next();
+  } catch (error) {
+    console.error(
+      "Admin lookup failed:",
+      error instanceof Error ? error.message : error,
+    );
+    res.status(500).json({ error: "Server error" });
   }
-
-  if (!admin.authUserId) {
-    await db
-      .update(adminUsers)
-      .set({ authUserId: userId, updatedAt: new Date() })
-      .where(eq(adminUsers.id, admin.id));
-
-    await db.insert(auditLog).values({
-      adminUserId: admin.id,
-      action: "admin.login",
-      entity: "admin_user",
-      entityId: admin.id,
-      details: { email: admin.email, firstLogin: true },
-    });
-  }
-
-  req.admin = {
-    id: admin.id,
-    email: admin.email,
-    name: admin.name,
-    role: admin.role,
-  };
-
-  next();
 }
 
 export function requireRole(role: AdminContext["role"]) {
