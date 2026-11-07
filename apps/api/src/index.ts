@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import { API_NAME } from "@zayn/shared";
 import { env } from "./config/env";
+import { adminAuthRouter } from "./routes/adminAuth";
 import { healthRouter } from "./routes/health";
 
 const app = express();
@@ -12,6 +13,7 @@ app.use(
   cors({
     origin: env.WEB_ORIGIN,
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 app.use(express.json());
@@ -21,6 +23,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use(healthRouter);
+app.use("/admin", adminAuthRouter);
 
 app.listen(env.PORT, () => {
   console.log(`API listening on http://localhost:${env.PORT}`);

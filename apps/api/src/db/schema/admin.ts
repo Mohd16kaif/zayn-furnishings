@@ -12,7 +12,7 @@ export const adminUsers = pgTable(
   "admin_users",
   {
     ...baseColumns(),
-    authUserId: uuid("auth_user_id").notNull().unique(),
+    authUserId: uuid("auth_user_id").unique(),
     email: text("email").notNull().unique(),
     name: text("name"),
     role: adminRoleEnum("role").default("staff").notNull(),

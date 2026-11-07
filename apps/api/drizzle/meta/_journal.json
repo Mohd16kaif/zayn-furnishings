@@ -15,6 +15,13 @@
       "when": 1794048731209,
       "tag": "0001_rls_and_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794050602843,
+      "tag": "0002_admin_auth_privileges",
+      "breakpoints": true
     }
   ]
 }
