@@ -13,6 +13,9 @@ out/
 dist/
 build/
 
+# Image originals backup
+_originals/
+
 # Logs
 *.log
 npm-debug.log*
