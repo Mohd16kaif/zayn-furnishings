@@ -4,6 +4,8 @@ import helmet from "helmet";
 import { API_NAME } from "@zayn/shared";
 import { env } from "./config/env";
 import { adminAuthRouter } from "./routes/adminAuth";
+import { adminCategoriesRouter } from "./routes/adminCategories";
+import { adminProductsRouter } from "./routes/adminProducts";
 import { healthRouter } from "./routes/health";
 
 const app = express();
@@ -27,6 +29,8 @@ app.get("/", (_req, res) => {
 
 app.use(healthRouter);
 app.use("/admin", adminAuthRouter);
+app.use("/admin", adminCategoriesRouter);
+app.use("/admin", adminProductsRouter);
 
 app.listen(env.PORT, () => {
   console.log(`API listening on http://localhost:${env.PORT}`);

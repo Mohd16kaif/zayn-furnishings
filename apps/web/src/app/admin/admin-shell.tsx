@@ -18,8 +18,8 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 const navItems: Array<{ label: string; href: string; enabled: boolean }> = [
   { label: "Dashboard", href: "/admin", enabled: true },
-  { label: "Categories", href: "/admin/categories", enabled: false },
-  { label: "Products", href: "/admin/products", enabled: false },
+  { label: "Categories", href: "/admin/categories", enabled: true },
+  { label: "Products", href: "/admin/products", enabled: true },
   { label: "Orders", href: "/admin/orders", enabled: false },
   { label: "Deliveries", href: "/admin/deliveries", enabled: false },
   { label: "Customers", href: "/admin/customers", enabled: false },
