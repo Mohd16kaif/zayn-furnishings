@@ -1,3 +1,5 @@
+export const instant = false;
+
 const cards = [
   {
     title: "Products",

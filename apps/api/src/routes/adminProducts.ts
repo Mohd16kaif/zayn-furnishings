@@ -894,6 +894,8 @@ adminProductsRouter.delete(
     }
 
     try {
+      let imagePaths: string[] = [];
+
       await db.transaction(async (tx) => {
         const [existing] = await tx
           .select()
@@ -917,6 +919,15 @@ adminProductsRouter.delete(
           );
         }
 
+        const storedImages = await tx
+          .select({ storagePath: productImages.storagePath })
+          .from(productImages)
+          .where(eq(productImages.productId, existing.id));
+
+        imagePaths = storedImages
+          .map((image) => image.storagePath)
+          .filter((path): path is string => Boolean(path));
+
         await tx.delete(products).where(eq(products.id, existing.id));
 
         await writeAudit(tx, {
@@ -927,6 +938,8 @@ adminProductsRouter.delete(
           details: { fields: [] },
         });
       });
+
+      await deleteImageObjects(imagePaths);
 
       res.json({ ok: true });
     } catch (error) {

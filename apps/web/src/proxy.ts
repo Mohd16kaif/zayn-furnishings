@@ -35,10 +35,10 @@ export async function proxy(request: NextRequest) {
   });
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!isLoginPage && !user) {
+  if (!isLoginPage && !session?.user) {
     return NextResponse.redirect(new URL("/admin/login", request.url));
   }
 
