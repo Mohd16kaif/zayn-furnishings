@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -392,9 +393,10 @@ export function ProductsClient() {
 
         {loadStatus === "ready" && items.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full text-left text-sm">
+            <table className="min-w-[1000px] w-full text-left text-sm">
               <thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
                 <tr>
+                  <th className="px-4 py-3 font-medium">Photo</th>
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">SKU</th>
                   <th className="px-4 py-3 font-medium">Category</th>
@@ -415,6 +417,21 @@ export function ProductsClient() {
                       key={product.id}
                       className="border-t border-stone-100 align-top"
                     >
+                      <td className="px-4 py-3">
+                        {product.primary_image_url ? (
+                          <Image
+                            src={product.primary_image_url}
+                            alt={product.name}
+                            width={48}
+                            height={48}
+                            className="h-12 w-12 rounded-lg border border-stone-200 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-stone-50 text-center text-[10px] leading-tight text-stone-400">
+                            No photo
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-stone-900">
                           {product.name}

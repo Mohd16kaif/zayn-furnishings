@@ -59,6 +59,7 @@ export const productImages = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
     url: text("url").notNull(),
+    storagePath: text("storage_path"),
     altText: text("alt_text"),
     sortOrder: integer("sort_order").default(0).notNull(),
   },

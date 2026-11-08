@@ -15,10 +15,11 @@ app.use(
   cors({
     origin: env.WEB_ORIGIN,
     credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 // Required behind Render's proxy so rate limiting sees the real client IP.
 app.set("trust proxy", 1);

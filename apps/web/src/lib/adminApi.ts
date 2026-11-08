@@ -16,6 +16,17 @@ export type AdminCategory = {
   product_count: number;
 };
 
+export type AdminProductImage = {
+  id: string;
+  product_id: string;
+  url: string;
+  storage_path: string | null;
+  alt_text: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AdminProduct = {
   id: string;
   name: string;
@@ -38,6 +49,8 @@ export type AdminProduct = {
   is_featured: boolean;
   seo_title: string | null;
   seo_description: string | null;
+  images: AdminProductImage[];
+  primary_image_url: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -132,4 +145,87 @@ export async function adminFetch<T>(
   }
 
   return data as T;
+}
+
+export async function adminUpload<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  const supabase = getSupabaseBrowserClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    await handleUnauthorized();
+    throw new AdminApiError(401, "Your session has expired.");
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+
+    request.open("POST", `${apiUrl}${path}`);
+    request.setRequestHeader(
+      "Authorization",
+      `Bearer ${session.access_token}`,
+    );
+
+    request.upload.onprogress = (event) => {
+      if (onProgress && event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    request.onload = () => {
+      let data:
+        | { error?: string; fields?: Record<string, string> }
+        | null = null;
+
+      try {
+        data = request.responseText
+          ? (JSON.parse(request.responseText) as {
+              error?: string;
+              fields?: Record<string, string>;
+            })
+          : null;
+      } catch {
+        data = null;
+      }
+
+      if (request.status === 401) {
+        void handleUnauthorized();
+        reject(new AdminApiError(401, "Your session has expired."));
+        return;
+      }
+
+      if (request.status < 200 || request.status >= 300) {
+        reject(
+          new AdminApiError(
+            request.status,
+            data?.error ?? "Something went wrong. Please try again.",
+            data?.fields,
+          ),
+        );
+        return;
+      }
+
+      resolve(data as T);
+    };
+
+    request.onerror = () => {
+      reject(
+        new AdminApiError(
+          0,
+          "Unable to reach the server. Please check your connection and try again.",
+        ),
+      );
+    };
+
+    request.onabort = () => {
+      reject(new AdminApiError(0, "The upload was cancelled."));
+    };
+
+    request.send(formData);
+  });
 }

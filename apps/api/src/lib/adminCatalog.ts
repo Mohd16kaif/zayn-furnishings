@@ -6,6 +6,7 @@ import {
   categories,
   products,
   type Product,
+  type ProductImage,
 } from "../db/schema";
 
 export type Database = PostgresJsDatabase<Record<string, never>>;
@@ -308,6 +309,17 @@ export async function writeAudit(
   });
 }
 
+export type SerializedProductImage = {
+  id: string;
+  product_id: string;
+  url: string;
+  storage_path: string | null;
+  alt_text: string | null;
+  sort_order: number;
+  created_at: Date;
+  updated_at: Date;
+};
+
 export type SerializedProduct = {
   id: string;
   name: string;
@@ -330,9 +342,26 @@ export type SerializedProduct = {
   is_featured: boolean;
   seo_title: string | null;
   seo_description: string | null;
+  images: SerializedProductImage[];
+  primary_image_url: string | null;
   created_at: Date;
   updated_at: Date;
 };
+
+export function serializeProductImage(
+  image: ProductImage,
+): SerializedProductImage {
+  return {
+    id: image.id,
+    product_id: image.productId,
+    url: image.url,
+    storage_path: image.storagePath,
+    alt_text: image.altText,
+    sort_order: image.sortOrder,
+    created_at: image.createdAt,
+    updated_at: image.updatedAt,
+  };
+}
 
 function toNumber(value: string | null): number | null {
   if (value === null) {
@@ -346,7 +375,13 @@ function toNumber(value: string | null): number | null {
 export function serializeProduct(
   product: Product,
   categoryName: string | null = null,
+  options: {
+    images?: SerializedProductImage[];
+    primaryImageUrl?: string | null;
+  } = {},
 ): SerializedProduct {
+  const images = options.images ?? [];
+
   return {
     id: product.id,
     name: product.name,
@@ -369,6 +404,9 @@ export function serializeProduct(
     is_featured: product.isFeatured,
     seo_title: product.seoTitle,
     seo_description: product.seoDescription,
+    images,
+    primary_image_url:
+      options.primaryImageUrl ?? images[0]?.url ?? null,
     created_at: product.createdAt,
     updated_at: product.updatedAt,
   };

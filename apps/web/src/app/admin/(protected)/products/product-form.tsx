@@ -20,6 +20,7 @@ import {
   dollarsToCents,
   formatCents,
 } from "@/lib/money";
+import { ProductImages } from "./product-images";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -467,6 +468,12 @@ export function ProductForm({
         ) : null}
       </div>
 
+      {!productId ? (
+        <p className="mt-4 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+          Save the product first, then add photos.
+        </p>
+      ) : null}
+
       <form onSubmit={handleSubmit} className="mt-6 space-y-6" noValidate>
         <Section
           title="Basics"
@@ -547,6 +554,13 @@ export function ProductForm({
             />
           </Field>
         </Section>
+
+        {productId && product ? (
+          <ProductImages
+            productId={productId}
+            initialImages={product.images ?? []}
+          />
+        ) : null}
 
         <Section
           title="Pricing"

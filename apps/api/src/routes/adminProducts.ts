@@ -1,19 +1,26 @@
+import { randomUUID } from "node:crypto";
 import {
   and,
+  asc,
   count,
   desc,
   eq,
   ilike,
+  inArray,
+  max,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
-import { Router, type Request, type Response } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
+import { rateLimit } from "express-rate-limit";
+import multer from "multer";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
   categories,
   orderItems,
+  productImages,
   products,
   stockMovements,
 } from "../db/schema";
@@ -24,6 +31,7 @@ import {
   sendError,
   sendValidationError,
   serializeProduct,
+  serializeProductImage,
   slugify,
   toNumericString,
   uniqueProductSlug,
@@ -31,7 +39,134 @@ import {
   writeAudit,
   type Executor,
 } from "../lib/adminCatalog";
+import { detectImageType, processImage } from "../lib/imageProcessing";
+import { getSupabaseAdmin } from "../lib/supabase";
 import { requireAdmin } from "../middleware/requireAdmin";
+
+const PRODUCT_IMAGES_BUCKET = "product-images";
+const MAX_IMAGES_PER_PRODUCT = 10;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_FILES_PER_UPLOAD = 5;
+
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_IMAGE_BYTES,
+    files: MAX_FILES_PER_UPLOAD,
+  },
+});
+
+const imageUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.admin?.id ?? "anonymous",
+  message: {
+    error: "Too many photo uploads. Please wait a few minutes and try again.",
+  },
+});
+
+function uploadProductImages(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  imageUpload.array("files", MAX_FILES_PER_UPLOAD)(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({
+          error: "Each photo must be 8 MB or smaller.",
+        });
+        return;
+      }
+
+      if (
+        error.code === "LIMIT_FILE_COUNT" ||
+        error.code === "LIMIT_UNEXPECTED_FILE"
+      ) {
+        res.status(400).json({
+          error:
+            'You can upload up to 5 photos at a time using the "files" field.',
+        });
+        return;
+      }
+
+      res.status(400).json({
+        error: "The photos could not be uploaded. Please try again.",
+      });
+      return;
+    }
+
+    next(error);
+  });
+}
+
+function imageStorage() {
+  return getSupabaseAdmin().storage.from(PRODUCT_IMAGES_BUCKET);
+}
+
+async function uploadImageObject(
+  productId: string,
+  buffer: Buffer,
+): Promise<{ path: string; url: string }> {
+  const path = `products/${productId}/${randomUUID()}.webp`;
+  const storage = imageStorage();
+
+  const { error } = await storage.upload(path, buffer, {
+    contentType: "image/webp",
+    cacheControl: "31536000",
+    upsert: false,
+  });
+
+  if (error) {
+    throw new HttpError(
+      500,
+      "We could not save one of the photos. Please try again.",
+    );
+  }
+
+  const { data } = storage.getPublicUrl(path);
+
+  return { path, url: data.publicUrl };
+}
+
+async function deleteImageObjects(paths: string[]): Promise<void> {
+  if (paths.length === 0) {
+    return;
+  }
+
+  try {
+    const { error } = await imageStorage().remove(paths);
+    if (error) {
+      console.error("Failed to delete product image objects:", error.message);
+    }
+  } catch (error) {
+    console.error(
+      "Failed to delete product image objects:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+const imageReorderSchema = z
+  .array(
+    z.object({
+      id: z.string().uuid(),
+      sort_order: z.number().int().min(0),
+    }),
+  )
+  .min(1)
+  .max(MAX_IMAGES_PER_PRODUCT);
+
+const imageAltTextSchema = z.object({
+  alt_text: z.string().trim().max(200).nullable(),
+});
 
 const statusSchema = z.enum(["draft", "active", "archived"]);
 const numericField = z.number().finite().nonnegative().nullable().optional();
@@ -228,9 +363,35 @@ adminProductsRouter.get(
         .limit(page_size)
         .offset((page - 1) * page_size);
 
+      const productIds = rows.map((row) => row.product.id);
+      const primaryImageByProduct = new Map<string, string>();
+
+      if (productIds.length > 0) {
+        const imageRows = await db
+          .select({
+            productId: productImages.productId,
+            url: productImages.url,
+          })
+          .from(productImages)
+          .where(inArray(productImages.productId, productIds))
+          .orderBy(
+            asc(productImages.sortOrder),
+            asc(productImages.createdAt),
+          );
+
+        for (const image of imageRows) {
+          if (!primaryImageByProduct.has(image.productId)) {
+            primaryImageByProduct.set(image.productId, image.url);
+          }
+        }
+      }
+
       res.json({
         items: rows.map((row) =>
-          serializeProduct(row.product, row.categoryName),
+          serializeProduct(row.product, row.categoryName, {
+            primaryImageUrl:
+              primaryImageByProduct.get(row.product.id) ?? null,
+          }),
         ),
         total: Number(totalRow?.value ?? 0),
         page,
@@ -270,7 +431,20 @@ adminProductsRouter.get(
         return;
       }
 
-      res.json(serializeProduct(row.product, row.categoryName));
+      const images = await db
+        .select()
+        .from(productImages)
+        .where(eq(productImages.productId, row.product.id))
+        .orderBy(
+          asc(productImages.sortOrder),
+          asc(productImages.createdAt),
+        );
+
+      res.json(
+        serializeProduct(row.product, row.categoryName, {
+          images: images.map(serializeProductImage),
+        }),
+      );
     } catch (error) {
       sendError(res, error, "Failed to load product");
     }
@@ -757,6 +931,427 @@ adminProductsRouter.delete(
       res.json({ ok: true });
     } catch (error) {
       sendError(res, error, "Failed to delete product");
+    }
+  },
+);
+
+adminProductsRouter.get(
+  "/products/:id/images",
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      res.status(400).json({ error: "A valid product id is required." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      const [product] = await db
+        .select({ id: products.id })
+        .from(products)
+        .where(eq(products.id, id.data))
+        .limit(1);
+
+      if (!product) {
+        res.status(404).json({ error: "Product not found." });
+        return;
+      }
+
+      const images = await db
+        .select()
+        .from(productImages)
+        .where(eq(productImages.productId, product.id))
+        .orderBy(
+          asc(productImages.sortOrder),
+          asc(productImages.createdAt),
+        );
+
+      res.json(images.map(serializeProductImage));
+    } catch (error) {
+      sendError(res, error, "Failed to load product images");
+    }
+  },
+);
+
+adminProductsRouter.post(
+  "/products/:id/images",
+  imageUploadLimiter,
+  uploadProductImages,
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      res.status(400).json({ error: "A valid product id is required." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    const files = Array.isArray(req.files) ? req.files : [];
+
+    if (files.length === 0) {
+      res.status(400).json({ error: "Choose at least one photo to upload." });
+      return;
+    }
+
+    try {
+      const [product] = await db
+        .select({ id: products.id, name: products.name })
+        .from(products)
+        .where(eq(products.id, id.data))
+        .limit(1);
+
+      if (!product) {
+        res.status(404).json({ error: "Product not found." });
+        return;
+      }
+
+      const [existingCount] = await db
+        .select({ value: count() })
+        .from(productImages)
+        .where(eq(productImages.productId, product.id));
+
+      const currentCount = Number(existingCount?.value ?? 0);
+
+      if (currentCount + files.length > MAX_IMAGES_PER_PRODUCT) {
+        const remaining = Math.max(
+          0,
+          MAX_IMAGES_PER_PRODUCT - currentCount,
+        );
+        res.status(409).json({
+          error: `This product can have up to ${MAX_IMAGES_PER_PRODUCT} photos. It already has ${currentCount}, so you can add ${remaining} more.`,
+        });
+        return;
+      }
+
+      for (const file of files) {
+        if (!detectImageType(file.buffer)) {
+          res.status(400).json({
+            error: `"${file.originalname}" is not a JPG, PNG, or WebP image.`,
+          });
+          return;
+        }
+      }
+
+      const uploaded: Array<{ path: string; url: string }> = [];
+
+      try {
+        for (const file of files) {
+          let processed: Buffer;
+
+          try {
+            processed = await processImage(file.buffer);
+          } catch {
+            throw new HttpError(
+              400,
+              `"${file.originalname}" could not be processed as an image. Please try a different file.`,
+            );
+          }
+
+          uploaded.push(await uploadImageObject(product.id, processed));
+        }
+
+        const inserted = await db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select({ id: products.id })
+            .from(products)
+            .where(eq(products.id, product.id))
+            .for("update");
+
+          if (!locked) {
+            throw new HttpError(404, "Product not found.");
+          }
+
+          const [countRow] = await tx
+            .select({ value: count() })
+            .from(productImages)
+            .where(eq(productImages.productId, product.id));
+
+          const total = Number(countRow?.value ?? 0);
+
+          if (total + uploaded.length > MAX_IMAGES_PER_PRODUCT) {
+            const remaining = Math.max(
+              0,
+              MAX_IMAGES_PER_PRODUCT - total,
+            );
+            throw new HttpError(
+              409,
+              `This product can have up to ${MAX_IMAGES_PER_PRODUCT} photos. It already has ${total}, so you can add ${remaining} more.`,
+            );
+          }
+
+          const [maxRow] = await tx
+            .select({ value: max(productImages.sortOrder) })
+            .from(productImages)
+            .where(eq(productImages.productId, product.id));
+
+          const maxSort = maxRow?.value;
+          const startOrder =
+            maxSort === null || maxSort === undefined
+              ? 0
+              : Number(maxSort) + 1;
+
+          const rows = await tx
+            .insert(productImages)
+            .values(
+              uploaded.map((item, index) => ({
+                productId: product.id,
+                url: item.url,
+                storagePath: item.path,
+                altText: product.name,
+                sortOrder: startOrder + index,
+              })),
+            )
+            .returning();
+
+          await writeAudit(tx, {
+            adminUserId: req.admin!.id,
+            action: "product.image.add",
+            entity: "product",
+            entityId: product.id,
+            details: { count: rows.length },
+          });
+
+          return rows;
+        });
+
+        res.status(201).json(inserted.map(serializeProductImage));
+      } catch (error) {
+        await deleteImageObjects(uploaded.map((item) => item.path));
+        throw error;
+      }
+    } catch (error) {
+      sendError(res, error, "Failed to upload product images");
+    }
+  },
+);
+
+adminProductsRouter.patch(
+  "/products/:id/images/reorder",
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      res.status(400).json({ error: "A valid product id is required." });
+      return;
+    }
+
+    const parsed = imageReorderSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    const imageIds = parsed.data.map((item) => item.id);
+
+    if (new Set(imageIds).size !== imageIds.length) {
+      res.status(400).json({ error: "Each photo can only appear once." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      const images = await db.transaction(async (tx) => {
+        const [product] = await tx
+          .select({ id: products.id })
+          .from(products)
+          .where(eq(products.id, id.data))
+          .limit(1);
+
+        if (!product) {
+          throw new HttpError(404, "Product not found.");
+        }
+
+        const owned = await tx
+          .select({ id: productImages.id })
+          .from(productImages)
+          .where(
+            and(
+              eq(productImages.productId, product.id),
+              inArray(productImages.id, imageIds),
+            ),
+          );
+
+        if (owned.length !== imageIds.length) {
+          throw new HttpError(
+            400,
+            "One or more photos do not belong to this product.",
+          );
+        }
+
+        for (const item of parsed.data) {
+          await tx
+            .update(productImages)
+            .set({ sortOrder: item.sort_order, updatedAt: new Date() })
+            .where(
+              and(
+                eq(productImages.id, item.id),
+                eq(productImages.productId, product.id),
+              ),
+            );
+        }
+
+        await writeAudit(tx, {
+          adminUserId: req.admin!.id,
+          action: "product.image.reorder",
+          entity: "product",
+          entityId: product.id,
+          details: { count: parsed.data.length },
+        });
+
+        return await tx
+          .select()
+          .from(productImages)
+          .where(eq(productImages.productId, product.id))
+          .orderBy(
+            asc(productImages.sortOrder),
+            asc(productImages.createdAt),
+          );
+      });
+
+      res.json(images.map(serializeProductImage));
+    } catch (error) {
+      sendError(res, error, "Failed to reorder product images");
+    }
+  },
+);
+
+adminProductsRouter.patch(
+  "/products/:id/images/:imageId",
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+    const imageId = z.string().uuid().safeParse(req.params.imageId);
+
+    if (!id.success || !imageId.success) {
+      res
+        .status(400)
+        .json({ error: "Valid product and image ids are required." });
+      return;
+    }
+
+    const parsed = imageAltTextSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      const [existing] = await db
+        .select()
+        .from(productImages)
+        .where(
+          and(
+            eq(productImages.id, imageId.data),
+            eq(productImages.productId, id.data),
+          ),
+        )
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Photo not found." });
+        return;
+      }
+
+      const altText = parsed.data.alt_text?.trim()
+        ? parsed.data.alt_text
+        : null;
+
+      const [updated] = await db
+        .update(productImages)
+        .set({ altText, updatedAt: new Date() })
+        .where(eq(productImages.id, existing.id))
+        .returning();
+
+      await db.transaction(async (tx) => {
+        await writeAudit(tx, {
+          adminUserId: req.admin!.id,
+          action: "product.image.update",
+          entity: "product",
+          entityId: existing.productId,
+          details: { fields: ["alt_text"] },
+        });
+      });
+
+      res.json(serializeProductImage(updated));
+    } catch (error) {
+      sendError(res, error, "Failed to update photo details");
+    }
+  },
+);
+
+adminProductsRouter.delete(
+  "/products/:id/images/:imageId",
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+    const imageId = z.string().uuid().safeParse(req.params.imageId);
+
+    if (!id.success || !imageId.success) {
+      res
+        .status(400)
+        .json({ error: "Valid product and image ids are required." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      const [existing] = await db
+        .select()
+        .from(productImages)
+        .where(
+          and(
+            eq(productImages.id, imageId.data),
+            eq(productImages.productId, id.data),
+          ),
+        )
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Photo not found." });
+        return;
+      }
+
+      if (existing.storagePath) {
+        await deleteImageObjects([existing.storagePath]);
+      }
+
+      await db.delete(productImages).where(eq(productImages.id, existing.id));
+
+      await db.transaction(async (tx) => {
+        await writeAudit(tx, {
+          adminUserId: req.admin!.id,
+          action: "product.image.delete",
+          entity: "product",
+          entityId: existing.productId,
+          details: { image_id: existing.id },
+        });
+      });
+
+      res.json({ ok: true });
+    } catch (error) {
+      sendError(res, error, "Failed to delete photo");
     }
   },
 );
