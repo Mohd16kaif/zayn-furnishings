@@ -21,6 +21,7 @@ import {
   productImages,
   products,
   stockMovements,
+  storeSettings,
 } from "./schema";
 
 if (env.NODE_ENV === "production") {
@@ -152,7 +153,7 @@ const sampleProducts = [
     material: "Wool blend",
     color: "Sable",
     categorySlug: "rugs-and-decor",
-    isFeatured: false,
+    isFeatured: true,
   },
   {
     name: "SAMPLE - Ergonomic Office Chair",
@@ -271,6 +272,15 @@ async function seed() {
     )
     .onConflictDoNothing({ target: products.slug });
 
+  // Keep is_featured in sync with the seed data for sample rows (insert
+  // above is onConflictDoNothing, so existing rows would keep stale flags).
+  for (const product of sampleProducts) {
+    await database
+      .update(products)
+      .set({ isFeatured: product.isFeatured, updatedAt: new Date() })
+      .where(eq(products.slug, product.slug));
+  }
+
   const existingZones = await database
     .select({ name: deliveryZones.name })
     .from(deliveryZones);
@@ -308,6 +318,161 @@ async function seed() {
     });
   }
 
+  // TODO(before launch): confirm these claims with the client before go-live:
+  //  - warranty length (referenced in the materials/FAQ answers below)
+  //  - return window (currently 30 days)
+  //  - white-glove delivery threshold (the order amount that qualifies)
+  // Homepage content is only seeded while there are no hero blocks yet.
+  const [existingHero] = await database
+    .select({ value: count() })
+    .from(contentBlocks)
+    .where(eq(contentBlocks.type, "hero"));
+
+  if (Number(existingHero?.value ?? 0) === 0) {
+    await database.insert(contentBlocks).values([
+      {
+        type: "hero",
+        title: "Furniture made to be lived in.",
+        subtitle:
+          "Solid, comfortable pieces for the rooms you use every day.",
+        body: "SAMPLE hero copy - replace with final marketing copy.",
+        imageUrl: "/images/home/hero-1.jpg",
+        buttonText: "Shop the living room",
+        linkUrl: "/c/living-room",
+        sortOrder: 0,
+        isActive: true,
+      },
+      {
+        type: "hero",
+        title: "Bedrooms built for real mornings.",
+        subtitle: "Beds, dressers, and storage that keep up with you.",
+        body: "SAMPLE hero copy - replace with final marketing copy.",
+        imageUrl: "/images/home/hero-2.jpg",
+        buttonText: "Shop the bedroom",
+        linkUrl: "/c/bedroom",
+        sortOrder: 1,
+        isActive: true,
+      },
+      {
+        type: "room_tile",
+        title: "Living Room",
+        imageUrl: "/images/home/room-living.jpg",
+        linkUrl: "/c/living-room",
+        sortOrder: 0,
+        isActive: true,
+      },
+      {
+        type: "room_tile",
+        title: "Bedroom",
+        imageUrl: "/images/home/room-bedroom.jpg",
+        linkUrl: "/c/bedroom",
+        sortOrder: 1,
+        isActive: true,
+      },
+      {
+        type: "room_tile",
+        title: "Dining Room",
+        imageUrl: "/images/home/room-dining.jpg",
+        linkUrl: "/c/dining-room",
+        sortOrder: 2,
+        isActive: true,
+      },
+      {
+        type: "room_tile",
+        title: "Office",
+        imageUrl: "/images/home/room-office.jpg",
+        linkUrl: "/c/office",
+        sortOrder: 3,
+        isActive: true,
+      },
+      {
+        type: "room_tile",
+        title: "Outdoor",
+        imageUrl: null,
+        linkUrl: "/c/outdoor",
+        sortOrder: 4,
+        isActive: true,
+      },
+      {
+        type: "room_tile",
+        title: "Decor",
+        imageUrl: null,
+        linkUrl: "/c/rugs-and-decor",
+        sortOrder: 5,
+        isActive: true,
+      },
+      {
+        type: "info_card",
+        title: "Delivery",
+        body: "SAMPLE - White-glove delivery that brings furniture to your room and takes the packaging with us. Free standard delivery on qualifying orders; the threshold is confirmed with the client before launch.",
+        sortOrder: 0,
+        isActive: true,
+      },
+      {
+        type: "info_card",
+        title: "Returns",
+        body: "SAMPLE - Change of mind is fine. Return items in original condition within the return window; the exact number of days is confirmed with the client before launch.",
+        sortOrder: 1,
+        isActive: true,
+      },
+      {
+        type: "info_card",
+        title: "Secure checkout",
+        body: "SAMPLE - Checkout is encrypted end to end, and your card details never touch our servers. Pay by card or finance your purchase in monthly installments when financing is enabled.",
+        sortOrder: 2,
+        isActive: true,
+      },
+      {
+        type: "faq",
+        title: "How does delivery work?",
+        body: "SAMPLE - Larger furniture is delivered by our white-glove team, which carries it to the room of your choice and removes all packaging. Smaller items ship by parcel carrier. Orders above the free-delivery threshold ship free.",
+        sortOrder: 0,
+        isActive: true,
+      },
+      {
+        type: "faq",
+        title: "What is your return policy?",
+        body: "SAMPLE - You can return furniture in its original condition and packaging within the return window after delivery. Start a return by contacting our support team; refunds are issued once the item is inspected.",
+        sortOrder: 1,
+        isActive: true,
+      },
+      {
+        type: "faq",
+        title: "What materials do you use?",
+        body: "SAMPLE - Our pieces use solid oak and oak veneer, engineered wood with real wood finishes, performance fabrics, mesh, and wool or wool blends. Every product page lists the exact materials for that item, and warranty coverage for each material is confirmed before launch.",
+        sortOrder: 2,
+        isActive: true,
+      },
+      {
+        type: "faq",
+        title: "Do you offer trade or design services?",
+        body: "SAMPLE - Yes. Our design team can help you plan a room for free, and trade professionals get dedicated pricing and support for client projects. Contact us to get started.",
+        sortOrder: 3,
+        isActive: true,
+      },
+      {
+        type: "faq",
+        title: "How long will my order take?",
+        body: "SAMPLE - In-stock items are prepared for delivery within about a week. Made-to-order pieces take longer; each product page shows its current lead time and your confirmation email includes the estimated date.",
+        sortOrder: 4,
+        isActive: true,
+      },
+    ]);
+  }
+
+  // Store settings defaults. Insert-if-missing so admins can override keys
+  // later from the dashboard without the seed resetting them.
+  await database
+    .insert(storeSettings)
+    .values([
+      { key: "store_name", value: "Zayn Furnishings" },
+      { key: "phone", value: "" },
+      { key: "email", value: "" },
+      { key: "free_delivery_threshold_cents", value: 199900 },
+      { key: "show_financing", value: false },
+    ])
+    .onConflictDoNothing({ target: storeSettings.key });
+
   await database
     .insert(discountCodes)
     .values({
@@ -336,6 +501,7 @@ async function seed() {
     ["delivery_zones", deliveryZones],
     ["discount_codes", discountCodes],
     ["content_blocks", contentBlocks],
+    ["store_settings", storeSettings],
     ["admin_users", adminUsers],
     ["stock_movements", stockMovements],
     ["notifications_log", notificationsLog],

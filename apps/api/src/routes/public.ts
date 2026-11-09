@@ -26,6 +26,7 @@ import {
   deliveryZones,
   productImages,
   products,
+  storeSettings,
   type Product,
 } from "../db/schema";
 import { sendError, sendValidationError } from "../lib/adminCatalog";
@@ -167,6 +168,33 @@ const deliveryQuerySchema = z.object({
     .trim()
     .regex(/^\d{5}$/, "Enter a 5-digit US ZIP code."),
 });
+
+const DEFAULT_STORE_SETTINGS = {
+  store_name: "Zayn Furnishings",
+  phone: "",
+  email: "",
+  free_delivery_threshold_cents: 199900,
+  show_financing: false,
+} as const;
+
+function coerceSettingValue(key: string, value: unknown): unknown | undefined {
+  switch (key) {
+    case "store_name":
+    case "phone":
+    case "email":
+      return typeof value === "string" ? value : undefined;
+    case "free_delivery_threshold_cents":
+      return typeof value === "number" &&
+        Number.isInteger(value) &&
+        value >= 0
+        ? value
+        : undefined;
+    case "show_financing":
+      return typeof value === "boolean" ? value : undefined;
+    default:
+      return undefined;
+  }
+}
 
 export const publicRouter = Router();
 
@@ -675,6 +703,32 @@ publicRouter.get(
       res.json(grouped);
     } catch (error) {
       sendError(res, error, "Failed to load home content");
+    }
+  },
+);
+
+publicRouter.get(
+  "/settings",
+  cacheGet,
+  async (_req: Request, res: Response) => {
+    if (!requireDatabase(res)) {
+      return;
+    }
+
+    try {
+      const rows = await db!.select().from(storeSettings);
+      const result: Record<string, unknown> = { ...DEFAULT_STORE_SETTINGS };
+
+      for (const row of rows) {
+        const value = coerceSettingValue(row.key, row.value);
+        if (value !== undefined) {
+          result[row.key] = value;
+        }
+      }
+
+      res.json(result);
+    } catch (error) {
+      sendError(res, error, "Failed to load store settings");
     }
   },
 );
