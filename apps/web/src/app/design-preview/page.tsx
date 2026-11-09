@@ -1,5 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+  AnnouncementBar,
+} from "@/components/design/announcement-bar";
+import { ScrollProgress } from "@/components/motion/scroll-progress";
+import { SmoothScroll } from "@/components/motion/smooth-scroll";
+import { SiteFooter } from "@/components/design/site-footer";
+import { SiteHeader } from "@/components/design/site-header";
 import { DesignPreview } from "./design-preview";
 import type { PreviewImages } from "./preview-data";
 
@@ -29,5 +36,22 @@ const images: PreviewImages = {
 };
 
 export default function DesignPreviewPage() {
-  return <DesignPreview images={images} />;
+  return (
+    <div id="top">
+      <SmoothScroll />
+      <ScrollProgress />
+      <a className="zf-skip" href="#main">
+        Skip to content
+      </a>
+
+      <AnnouncementBar />
+      <SiteHeader />
+
+      <main id="main">
+        <DesignPreview images={images} />
+      </main>
+
+      <SiteFooter />
+    </div>
+  );
 }

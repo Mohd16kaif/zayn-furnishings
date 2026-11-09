@@ -1,3 +1,5 @@
+export * from "./public";
+
 export const API_NAME = "zayn-furnishings-api";
 
 export interface HealthResponse {
