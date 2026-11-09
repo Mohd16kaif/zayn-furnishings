@@ -16,7 +16,7 @@ import type {
   SearchSuggestCategory,
   SearchSuggestProduct,
 } from "@/lib/publicApi";
-import { SearchIcon } from "./icons";
+import { ArrowRightIcon, SearchIcon } from "./icons";
 import { SmartImage } from "./smart-image";
 
 type SuggestionOption =
@@ -29,6 +29,7 @@ type SearchComboboxProps = {
   autoFocus?: boolean;
   onEscape?: () => void;
   onNavigate?: () => void;
+  showSeeAll?: boolean;
 };
 
 type Suggestions = {
@@ -53,6 +54,7 @@ export function SearchCombobox({
   autoFocus = false,
   onEscape,
   onNavigate,
+  showSeeAll = false,
 }: SearchComboboxProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -136,12 +138,12 @@ export function SearchCombobox({
       next.push({ type: "category", category });
     }
 
-    if (next.length > 0) {
+    if (!showSeeAll && next.length > 0) {
       next.push({ type: "all", query: trimmed });
     }
 
     return next;
-  }, [results, trimmed]);
+  }, [results, trimmed, showSeeAll]);
 
   const open =
     focused &&
@@ -190,6 +192,14 @@ export function SearchCombobox({
     setResults(null);
     setFailed(false);
     setActiveIndex(-1);
+  }
+
+  function viewAll() {
+    navigateTo(
+      trimmed
+        ? `/search?q=${encodeURIComponent(trimmed)}`
+        : "/search",
+    );
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -402,6 +412,15 @@ export function SearchCombobox({
             })
           )}
         </ul>
+      ) : null}
+
+      {showSeeAll && trimmed.length > 0 ? (
+        <div className="zf-search-suggest__see-all">
+          <button type="button" onClick={viewAll}>
+            See all results
+            <ArrowRightIcon />
+          </button>
+        </div>
       ) : null}
     </form>
   );

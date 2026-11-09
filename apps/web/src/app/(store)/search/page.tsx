@@ -27,29 +27,6 @@ type SearchPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-function SearchBox({ q }: { q: string }) {
-  return (
-    <form
-      action="/search"
-      method="get"
-      className="zf-search__page"
-      role="search"
-    >
-      <label className="zf-sr-only" htmlFor="page-search-input">
-        Search products
-      </label>
-      <input
-        id="page-search-input"
-        name="q"
-        type="search"
-        placeholder="Search"
-        defaultValue={q}
-      />
-      <button type="submit">Search</button>
-    </form>
-  );
-}
-
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const rawSearch = await searchParams;
   const q = firstParam(rawSearch.q).slice(0, 200);
@@ -83,8 +60,6 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           <h1 className="zf-catalog__title">
             {q ? <>Results for &quot;{q}&quot;</> : "Search"}
           </h1>
-
-          <SearchBox q={q} />
         </header>
 
         {!q ? (

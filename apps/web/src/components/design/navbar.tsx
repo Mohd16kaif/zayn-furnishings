@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -42,6 +43,27 @@ function megaId(category: PublicCategoryNode): string {
   return `zf-mega-${category.slug}`;
 }
 
+type NavEntry =
+  | { kind: "category"; category: PublicCategoryNode }
+  | {
+      kind: "link";
+      href: string;
+      label: string;
+      sale?: boolean;
+    };
+
+function navEntryKey(entry: NavEntry): string {
+  return entry.kind === "category"
+    ? `category:${entry.category.slug}`
+    : `link:${entry.href}`;
+}
+
+function navEntryLabel(entry: NavEntry): string {
+  return entry.kind === "category"
+    ? entry.category.name
+    : entry.label;
+}
+
 function CartIconLink({ count }: { count: number }) {
   return (
     <Link
@@ -76,15 +98,26 @@ export function Navbar({
   const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
   const [openMega, setOpenMega] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerCategory, setDrawerCategory] =
     useState<PublicCategoryNode | null>(null);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const triggerRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const hoverTimerRef = useRef<number | null>(null);
   const categoriesRowRef = useRef<HTMLDivElement>(null);
-  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const navBarRef = useRef<HTMLDivElement>(null);
+  const navRowRef = useRef<HTMLUListElement>(null);
+  const measureRowRef = useRef<HTMLUListElement>(null);
+  const measureItemRefs = useRef(
+    new Map<string, HTMLLIElement | null>(),
+  );
+  const moreMeasureRef = useRef<HTMLLIElement | null>(null);
+  const moreWrapRef = useRef<HTMLLIElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const searchTriggerRef = useRef<HTMLButtonElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const drawerPanelRef = useRef<HTMLDivElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
@@ -94,6 +127,30 @@ export function Navbar({
   );
   const backFocusRef = useRef<string | null>(null);
   const cartCount = useCartCount();
+
+  const navEntries = useMemo<NavEntry[]>(() => {
+    const next: NavEntry[] = categories.map((category) => ({
+      kind: "category",
+      category,
+    }));
+
+    if (showNewArrivals) {
+      next.push({ kind: "link", href: "/new", label: "New Arrivals" });
+    }
+
+    if (showSale) {
+      next.push({
+        kind: "link",
+        href: "/sale",
+        label: "Sale",
+        sale: true,
+      });
+    }
+
+    return next;
+  }, [categories, showNewArrivals, showSale]);
+
+  const [visibleCount, setVisibleCount] = useState(navEntries.length);
 
   const registerTrigger = useCallback(
     (slug: string, element: HTMLButtonElement | null) => {
@@ -135,6 +192,58 @@ export function Navbar({
     }
   }, []);
 
+  const closeSearch = useCallback((returnFocus = true) => {
+    setSearchOpen(false);
+
+    if (returnFocus) {
+      searchTriggerRef.current?.focus();
+    }
+  }, []);
+
+  const measureNav = useCallback(() => {
+    const row = navRowRef.current;
+    const measureRow = measureRowRef.current;
+
+    if (!row || !measureRow) {
+      return;
+    }
+
+    const rowWidth = row.clientWidth;
+
+    if (rowWidth <= 0) {
+      setMoreOpen(false);
+      return;
+    }
+
+    const styles = window.getComputedStyle(measureRow);
+    const gap = Number.parseFloat(styles.columnGap) || 0;
+    const widths = navEntries.map(
+      (entry) =>
+        measureItemRefs.current.get(navEntryKey(entry))?.offsetWidth ??
+        0,
+    );
+    const moreWidth = moreMeasureRef.current?.offsetWidth ?? 0;
+    let count = 0;
+
+    for (let k = navEntries.length; k >= 0; k -= 1) {
+      const used = widths
+        .slice(0, k)
+        .reduce((total, width) => total + width, 0);
+      const gaps = k > 1 ? gap * (k - 1) : 0;
+      const more =
+        k < navEntries.length
+          ? (k > 0 ? gap : 0) + moreWidth
+          : 0;
+
+      if (used + gaps + more <= rowWidth + 0.5) {
+        count = k;
+        break;
+      }
+    }
+
+    setVisibleCount((current) => (current === count ? current : count));
+  }, [navEntries]);
+
   useEffect(() => {
     function onScroll() {
       setScrolled(window.scrollY > 40);
@@ -158,6 +267,15 @@ export function Navbar({
         return;
       }
 
+      if (searchOpen) {
+        closeSearch(true);
+      }
+
+      if (moreOpen) {
+        setMoreOpen(false);
+        moreButtonRef.current?.focus();
+      }
+
       if (openMega) {
         closeMega();
         triggerRefs.current.get(openMega)?.focus();
@@ -166,15 +284,99 @@ export function Navbar({
       if (drawerOpen) {
         closeDrawer(true);
       }
-
-      if (mobileSearchOpen) {
-        closeMobileSearch(true);
-      }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openMega, drawerOpen, mobileSearchOpen, closeMega, closeDrawer]);
+  }, [
+    openMega,
+    moreOpen,
+    searchOpen,
+    drawerOpen,
+    closeMega,
+    closeDrawer,
+    closeSearch,
+  ]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return;
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (searchPanelRef.current?.contains(target)) {
+        return;
+      }
+
+      if (searchTriggerRef.current?.contains(target)) {
+        return;
+      }
+
+      closeSearch(false);
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [searchOpen, closeSearch]);
+
+  useEffect(() => {
+    if (!moreOpen) {
+      return;
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target;
+
+      if (
+        target instanceof Node &&
+        moreWrapRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      setMoreOpen(false);
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [moreOpen]);
+
+  useEffect(() => {
+    const row = navRowRef.current;
+
+    if (!row) {
+      return;
+    }
+
+    let frame = 0;
+
+    const schedule = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measureNav);
+    };
+
+    const observer = new ResizeObserver(schedule);
+    observer.observe(row);
+    window.addEventListener("resize", schedule);
+
+    if (typeof document.fonts !== "undefined") {
+      document.fonts.ready.then(schedule).catch(() => undefined);
+    }
+
+    schedule();
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+    };
+  }, [measureNav]);
 
   useEffect(() => {
     if (!openMega) {
@@ -314,12 +516,15 @@ export function Navbar({
     setDrawerCategory(null);
   }
 
-  function closeMobileSearch(returnFocus = true) {
-    setMobileSearchOpen(false);
-
-    if (returnFocus) {
-      searchButtonRef.current?.focus();
+  function toggleSearch() {
+    if (searchOpen) {
+      setSearchOpen(false);
+      return;
     }
+
+    closeMega();
+    setMoreOpen(false);
+    setSearchOpen(true);
   }
 
   function handleMegaClick(category: PublicCategoryNode) {
@@ -332,6 +537,10 @@ export function Navbar({
     cancelHoverIntent();
     setOpenMega(category.slug);
   }
+
+  const shownCount = Math.min(visibleCount, navEntries.length);
+  const visibleEntries = navEntries.slice(0, shownCount);
+  const overflowEntries = navEntries.slice(shownCount);
 
   const thresholdText = formatCents(settings.free_delivery_threshold_cents);
   const phoneHref = settings.phone
@@ -368,10 +577,6 @@ export function Navbar({
               >
                 <MenuIcon />
               </button>
-
-              <div className="zf-nav__search-desktop">
-                <SearchCombobox />
-              </div>
             </div>
 
             <Link
@@ -384,212 +589,319 @@ export function Navbar({
             </Link>
 
             <div className="zf-nav__right">
-              <div className="zf-nav__actions zf-nav__actions--desktop">
-                <Link
+              <div className="zf-nav__actions">
+                <button
+                  ref={searchTriggerRef}
+                  type="button"
                   className="zf-icon-btn"
+                  aria-label="Search"
+                  aria-expanded={searchOpen}
+                  aria-controls={
+                    searchOpen ? "zf-search-panel" : undefined
+                  }
+                  onClick={toggleSearch}
+                >
+                  <SearchIcon />
+                </button>
+                <Link
+                  className="zf-icon-btn zf-nav__action--optional"
                   href="/account"
                   aria-label="Account"
                 >
                   <UserIcon />
                 </Link>
                 <Link
-                  className="zf-icon-btn"
+                  className="zf-icon-btn zf-nav__action--optional"
                   href="/wishlist"
                   aria-label="Wishlist"
                 >
                   <HeartIcon />
                 </Link>
-                <CartIconLink count={cartCount} />
                 <ThemeToggle />
-              </div>
-
-              <div className="zf-nav__actions zf-nav__actions--mobile">
-                <button
-                  ref={searchButtonRef}
-                  type="button"
-                  className="zf-icon-btn"
-                  aria-label={
-                    mobileSearchOpen ? "Close search" : "Open search"
-                  }
-                  aria-expanded={mobileSearchOpen}
-                  aria-controls={
-                    mobileSearchOpen ? "zf-mobile-search" : undefined
-                  }
-                  onClick={() =>
-                    mobileSearchOpen
-                      ? closeMobileSearch(true)
-                      : setMobileSearchOpen(true)
-                  }
-                >
-                  <SearchIcon />
-                </button>
                 <CartIconLink count={cartCount} />
               </div>
             </div>
           </div>
         </div>
 
-        {categories.length > 0 || showNewArrivals || showSale ? (
+        {navEntries.length > 0 ? (
           <div
             ref={categoriesRowRef}
             className="zf-nav__categories-row"
           >
             <div className="zf-container">
-              <ul className="zf-nav__links">
-                {categories.map((category) => {
-                  const isOpen = openMega === category.slug;
+              <div ref={navBarRef} className="zf-nav__bar">
+                <ul ref={navRowRef} className="zf-nav__links">
+                  {visibleEntries.map((entry) => {
+                    if (entry.kind === "link") {
+                      return (
+                        <li
+                          key={navEntryKey(entry)}
+                          className="zf-nav__item"
+                        >
+                          <Link
+                            className={`zf-nav__link${
+                              entry.sale
+                                ? " zf-nav__link--sale"
+                                : ""
+                            }`}
+                            href={entry.href}
+                            onClick={closeMega}
+                          >
+                            {entry.label}
+                          </Link>
+                        </li>
+                      );
+                    }
 
-                  return (
-                    <li
-                      key={category.slug}
-                      className="zf-nav__item zf-mega-wrap"
-                      onMouseEnter={() => scheduleMega(category.slug)}
-                      onMouseLeave={() => {
-                        cancelHoverIntent();
+                    const category = entry.category;
+                    const isOpen = openMega === category.slug;
 
-                        if (isOpen) {
-                          setOpenMega(null);
+                    return (
+                      <li
+                        key={navEntryKey(entry)}
+                        className="zf-nav__item zf-mega-wrap"
+                        onMouseEnter={() =>
+                          scheduleMega(category.slug)
                         }
-                      }}
+                        onMouseLeave={() => {
+                          cancelHoverIntent();
+
+                          if (isOpen) {
+                            setOpenMega(null);
+                          }
+                        }}
+                        onBlur={(event) => {
+                          if (
+                            !event.currentTarget.contains(
+                              event.relatedTarget as HTMLElement | null,
+                            )
+                          ) {
+                            setOpenMega(null);
+                          }
+                        }}
+                      >
+                        <button
+                          ref={(element) =>
+                            registerTrigger(category.slug, element)
+                          }
+                          type="button"
+                          className="zf-nav__link"
+                          aria-expanded={isOpen}
+                          aria-controls={megaId(category)}
+                          aria-haspopup="true"
+                          onClick={() => handleMegaClick(category)}
+                        >
+                          {category.name}
+                          <ChevronDownIcon className="zf-nav__chevron" />
+                        </button>
+
+                        <div
+                          id={megaId(category)}
+                          className={`zf-mega${isOpen ? " is-open" : ""}`}
+                          aria-hidden={!isOpen}
+                          inert={!isOpen}
+                        >
+                          <div className="zf-container">
+                            <div
+                              className={`zf-mega__inner${
+                                category.image_url
+                                  ? ""
+                                  : " zf-mega__inner--no-tile"
+                              }`}
+                            >
+                              <div className="zf-mega__main">
+                                <h3 className="zf-mega__title">
+                                  <Link
+                                    className="zf-mega__shop-all"
+                                    href={`/c/${category.slug}`}
+                                    onClick={closeMega}
+                                  >
+                                    Shop All {category.name}
+                                    <ArrowRightIcon />
+                                  </Link>
+                                </h3>
+
+                                {category.children.length > 0 ? (
+                                  <ul
+                                    className="zf-mega__cols"
+                                    aria-label={`${category.name} subcategories`}
+                                  >
+                                    {category.children.map(
+                                      (child) => (
+                                        <li key={child.slug}>
+                                          <Link
+                                            href={`/c/${child.slug}`}
+                                            onClick={closeMega}
+                                          >
+                                            {child.name}
+                                          </Link>
+                                        </li>
+                                      ),
+                                    )}
+                                  </ul>
+                                ) : null}
+                              </div>
+
+                              {category.image_url ? (
+                                <div className="zf-mega__tile">
+                                  <div className="zf-mega__tile-media">
+                                    <SmartImage
+                                      src={category.image_url}
+                                      alt={`${category.name} collection`}
+                                      sizes="(max-width: 1179px) 0px, 280px"
+                                      tone={2}
+                                      label={category.name}
+                                    />
+                                  </div>
+                                  <div className="zf-mega__tile-body">
+                                    <span className="zf-mega__tile-name">
+                                      {category.name}
+                                    </span>
+                                    <Link
+                                      className="zf-mega__tile-link"
+                                      href={`/c/${category.slug}`}
+                                      onClick={closeMega}
+                                    >
+                                      Shop now
+                                      <ArrowRightIcon />
+                                    </Link>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+
+                  {overflowEntries.length > 0 ? (
+                    <li
+                      ref={moreWrapRef}
+                      className="zf-nav__item zf-nav__more"
                       onBlur={(event) => {
                         if (
                           !event.currentTarget.contains(
                             event.relatedTarget as HTMLElement | null,
                           )
                         ) {
-                          setOpenMega(null);
+                          setMoreOpen(false);
                         }
                       }}
                     >
                       <button
-                        ref={(element) =>
-                          registerTrigger(category.slug, element)
-                        }
+                        ref={moreButtonRef}
                         type="button"
-                        className="zf-nav__link"
-                        aria-expanded={isOpen}
-                        aria-controls={megaId(category)}
+                        className="zf-nav__link zf-nav__more-trigger"
+                        aria-expanded={moreOpen}
+                        aria-controls="zf-nav-more-menu"
                         aria-haspopup="true"
-                        onClick={() => handleMegaClick(category)}
+                        onClick={() => setMoreOpen((open) => !open)}
                       >
-                        {category.name}
+                        More
                         <ChevronDownIcon className="zf-nav__chevron" />
                       </button>
 
-                      <div
-                        id={megaId(category)}
-                        className={`zf-mega${isOpen ? " is-open" : ""}`}
-                        aria-hidden={!isOpen}
-                        inert={!isOpen}
-                      >
-                        <div className="zf-container">
-                          <div
-                            className={`zf-mega__inner${
-                              category.image_url
-                                ? ""
-                                : " zf-mega__inner--no-tile"
-                            }`}
-                          >
-                            <div className="zf-mega__main">
-                              <h3 className="zf-mega__title">
-                                <Link
-                                  className="zf-mega__shop-all"
-                                  href={`/c/${category.slug}`}
-                                  onClick={closeMega}
-                                >
-                                  Shop All {category.name}
-                                  <ArrowRightIcon />
-                                </Link>
-                              </h3>
-
-                              {category.children.length > 0 ? (
-                                <ul
-                                  className="zf-mega__cols"
-                                  aria-label={`${category.name} subcategories`}
-                                >
-                                  {category.children.map((child) => (
-                                    <li key={child.slug}>
-                                      <Link
-                                        href={`/c/${child.slug}`}
-                                        onClick={closeMega}
-                                      >
-                                        {child.name}
-                                      </Link>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                            </div>
-
-                            {category.image_url ? (
-                              <div className="zf-mega__tile">
-                                <div className="zf-mega__tile-media">
-                                  <SmartImage
-                                    src={category.image_url}
-                                    alt={`${category.name} collection`}
-                                    sizes="(max-width: 1023px) 0px, 280px"
-                                    tone={2}
-                                    label={category.name}
-                                  />
-                                </div>
-                                <div className="zf-mega__tile-body">
-                                  <span className="zf-mega__tile-name">
-                                    {category.name}
-                                  </span>
-                                  <Link
-                                    className="zf-mega__tile-link"
-                                    href={`/c/${category.slug}`}
-                                    onClick={closeMega}
-                                  >
-                                    Shop now
-                                    <ArrowRightIcon />
-                                  </Link>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
+                      {moreOpen ? (
+                        <ul
+                          id="zf-nav-more-menu"
+                          className="zf-nav__more-menu"
+                        >
+                          {overflowEntries.map((entry) => (
+                            <li key={navEntryKey(entry)}>
+                              <Link
+                                className={`zf-nav__more-link${
+                                  entry.kind === "link" &&
+                                  entry.sale
+                                    ? " zf-nav__link--sale"
+                                    : ""
+                                }`}
+                                href={
+                                  entry.kind === "category"
+                                    ? `/c/${entry.category.slug}`
+                                    : entry.href
+                                }
+                                onClick={() => setMoreOpen(false)}
+                              >
+                                {navEntryLabel(entry)}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </li>
-                  );
-                })}
+                  ) : null}
+                </ul>
 
-                {showNewArrivals ? (
-                  <li className="zf-nav__item">
-                    <Link
-                      className="zf-nav__link"
-                      href="/new"
-                      onClick={closeMega}
-                    >
-                      New Arrivals
-                    </Link>
-                  </li>
-                ) : null}
+                <ul
+                  ref={measureRowRef}
+                  className="zf-nav__links zf-nav__measure"
+                  aria-hidden="true"
+                >
+                  {navEntries.map((entry) => (
+                    <li
+                      key={navEntryKey(entry)}
+                      className="zf-nav__item"
+                      ref={(element) => {
+                        const key = navEntryKey(entry);
 
-                {showSale ? (
-                  <li className="zf-nav__item">
-                    <Link
-                      className="zf-nav__link zf-nav__link--sale"
-                      href="/sale"
-                      onClick={closeMega}
+                        if (element) {
+                          measureItemRefs.current.set(key, element);
+                        } else {
+                          measureItemRefs.current.delete(key);
+                        }
+                      }}
                     >
-                      Sale
-                    </Link>
+                      <span
+                        className={`zf-nav__link${
+                          entry.kind === "link" && entry.sale
+                            ? " zf-nav__link--sale"
+                            : ""
+                        }`}
+                      >
+                        {navEntryLabel(entry)}
+                        {entry.kind === "category" ? (
+                          <ChevronDownIcon className="zf-nav__chevron" />
+                        ) : null}
+                      </span>
+                    </li>
+                  ))}
+                  <li className="zf-nav__item" ref={moreMeasureRef}>
+                    <span className="zf-nav__link zf-nav__more-trigger">
+                      More
+                      <ChevronDownIcon className="zf-nav__chevron" />
+                    </span>
                   </li>
-                ) : null}
-              </ul>
+                </ul>
+              </div>
             </div>
           </div>
         ) : null}
 
-        {mobileSearchOpen ? (
-          <div className="zf-nav__mobile-search" id="zf-mobile-search">
+        {searchOpen ? (
+          <div
+            ref={searchPanelRef}
+            id="zf-search-panel"
+            className="zf-search-panel"
+          >
             <div className="zf-container">
-              <SearchCombobox
-                autoFocus
-                onEscape={() => closeMobileSearch(true)}
-                onNavigate={() => setMobileSearchOpen(false)}
-              />
+              <div className="zf-search-panel__inner">
+                <SearchCombobox
+                  autoFocus
+                  showSeeAll
+                  onEscape={() => closeSearch(true)}
+                  onNavigate={() => setSearchOpen(false)}
+                />
+                <button
+                  type="button"
+                  className="zf-icon-btn zf-search-panel__close"
+                  aria-label="Close search"
+                  onClick={() => closeSearch(true)}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
