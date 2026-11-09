@@ -1,14 +1,14 @@
 "use client";
 
-import { Craft } from "@/components/design/craft";
-import { Faq } from "@/components/design/faq";
-import { FeaturedCarousel } from "@/components/design/featured-carousel";
-import { Hero } from "@/components/design/hero";
-import { Promo } from "@/components/design/promo";
-import { Rooms } from "@/components/design/rooms";
-import { Signature } from "@/components/design/signature";
+import { Craft } from "@/components/storefront/craft";
+import { Faq } from "@/components/storefront/faq";
+import { FeaturedCarousel } from "@/components/storefront/featured-carousel";
+import { Hero } from "@/components/storefront/hero";
+import { Promo } from "@/components/storefront/promo";
+import { Rooms } from "@/components/storefront/rooms";
+import { Signature } from "@/components/storefront/signature";
 import { Testimonials } from "@/components/design/testimonials";
-import { TrustStrip } from "@/components/design/trust-strip";
+import { TrustStrip } from "@/components/storefront/trust-strip";
 import type { PreviewImages } from "./preview-data";
 
 // Page sections only — the shared storefront shell (skip link, announcement,

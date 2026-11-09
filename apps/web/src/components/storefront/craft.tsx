@@ -3,21 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { useInView, useReducedMotion } from "motion/react";
 import { Reveal } from "@/components/motion/reveal";
-import { SmartImage } from "./smart-image";
+import { SmartImage } from "@/components/design/smart-image";
 
-type Stat = {
+export type CraftStat = {
   value: number;
-  suffix: string;
+  suffix?: string;
   label: string;
 };
 
-const stats: Stat[] = [
+const PREVIEW_STATS: CraftStat[] = [
   { value: 10, suffix: "yr", label: "Frame warranty" },
   { value: 100, suffix: "%", label: "Hand-finished details" },
   { value: 100, suffix: "%", label: "Delivered to your room" },
 ];
 
-function CountUp({ value, suffix, label }: Stat) {
+function CountUp({ value, suffix = "", label }: CraftStat) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-10%" });
   const reduceMotion = useReducedMotion();
@@ -60,7 +60,18 @@ function CountUp({ value, suffix, label }: Stat) {
   );
 }
 
-export function Craft({ image }: { image: string | null }) {
+/**
+ * Craft section. `stats` should contain facts the storefront can compute
+ * (active product count, collection count). Do not pass unverified claims
+ * (warranty years, finish percentages) - see the TODO below.
+ */
+export function Craft({
+  image,
+  stats = PREVIEW_STATS,
+}: {
+  image?: string | null;
+  stats?: CraftStat[];
+}) {
   return (
     <section className="zf-section" id="craft" aria-labelledby="craft-title">
       <div className="zf-container">
@@ -93,11 +104,15 @@ export function Craft({ image }: { image: string | null }) {
               Pieces that settle into a room and quietly become part of the
               family.
             </p>
-            <div className="zf-craft__stats">
-              {stats.map((stat) => (
-                <CountUp key={stat.label} {...stat} />
-              ))}
-            </div>
+            {stats.length > 0 ? (
+              // TODO(launch): add real craft claims (warranty, finishes,
+              // delivery percentages) only after client confirmation.
+              <div className="zf-craft__stats">
+                {stats.map((stat) => (
+                  <CountUp key={stat.label} {...stat} />
+                ))}
+              </div>
+            ) : null}
           </Reveal>
         </div>
       </div>

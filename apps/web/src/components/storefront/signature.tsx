@@ -8,7 +8,10 @@ export function Signature() {
         <Reveal className="zf-signature__inner" variant="fade">
           <span className="zf-gold-rule" aria-hidden="true" />
           <span className="zf-eyebrow zf-eyebrow--center">Our philosophy</span>
-          <p className="zf-signature__text">
+          <p
+            className="zf-signature__text"
+            aria-label="We believe the best rooms are not decorated. They are lived in, layered slowly, and made to last."
+          >
             <TextReveal text="We believe the best rooms are not decorated. They are lived in, layered slowly, and made to last." />
           </p>
         </Reveal>

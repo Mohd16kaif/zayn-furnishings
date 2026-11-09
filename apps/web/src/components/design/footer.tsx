@@ -12,6 +12,11 @@ type FooterProps = {
 
 type FooterLink = { label: string; href: string };
 
+// Read once at module evaluation. Calling `new Date()` during render makes
+// Next.js treat the client component as browser-only and bail out of the
+// static prerender.
+const CURRENT_YEAR = new Date().getFullYear();
+
 function companyLinks(): FooterLink[] {
   return [
     { label: "Our Story", href: "/about" },
@@ -160,7 +165,7 @@ export function Footer({ categories, settings }: FooterProps) {
 
         <div className="zf-footer__bottom">
           <p className="zf-footer__legal">
-            &copy; {new Date().getFullYear()} {settings.store_name}.
+            &copy; {CURRENT_YEAR} {settings.store_name}.
           </p>
         </div>
       </div>

@@ -1,11 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { faqs } from "@/app/design-preview/preview-data";
+import { faqs as previewFaqs } from "@/app/design-preview/preview-data";
 import { Reveal } from "@/components/motion/reveal";
 
-export function Faq() {
+export type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+const PREVIEW_FAQS: FaqItem[] = previewFaqs.map((faq) => ({
+  question: faq.question,
+  answer: faq.answer,
+}));
+
+export function Faq({ faqs = PREVIEW_FAQS }: { faqs?: FaqItem[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+
+  if (faqs.length === 0) {
+    return null;
+  }
 
   return (
     <section className="zf-section" id="faq" aria-labelledby="faq-title">
@@ -35,7 +49,7 @@ export function Faq() {
               return (
                 <div
                   className={`zf-faq__item${isOpen ? " is-open" : ""}`}
-                  key={faq.question}
+                  key={`${faq.question}-${index}`}
                 >
                   <h3>
                     <button

@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { products } from "@/app/design-preview/preview-data";
+import { products as previewProducts } from "@/app/design-preview/preview-data";
 import { Reveal } from "@/components/motion/reveal";
-import { ArrowLeftIcon, ArrowRightIcon } from "./icons";
-import { SmartImage } from "./smart-image";
+import { ArrowLeftIcon, ArrowRightIcon } from "@/components/design/icons";
+import {
+  ProductCard,
+  type ProductCardData,
+  type ProductTone,
+} from "./product-card";
 
 type DragState = {
   active: boolean;
@@ -12,7 +16,30 @@ type DragState = {
   scrollLeft: number;
 };
 
-export function FeaturedCarousel() {
+const PREVIEW_PRODUCTS: ProductCardData[] = previewProducts.map(
+  (product, index) => ({
+    id: `preview-${index}`,
+    name: product.name,
+    category: product.category,
+    priceLabel: product.price,
+    salePriceLabel: product.salePrice,
+    inStock: !product.soldOut,
+    tone: product.tone as ProductTone,
+  }),
+);
+
+const PREVIEW_LEDE =
+  "Sample product cards for the preview. In the storefront these will connect to live inventory, finishes, and lead times.";
+
+export function FeaturedCarousel({
+  products = PREVIEW_PRODUCTS,
+  heading = "The pieces everyone is living with.",
+  lede = PREVIEW_LEDE,
+}: {
+  products?: ProductCardData[];
+  heading?: string;
+  lede?: string | null;
+}) {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState>({ active: false, startX: 0, scrollLeft: 0 });
   const [dragging, setDragging] = useState(false);
@@ -42,7 +69,11 @@ export function FeaturedCarousel() {
       track.removeEventListener("scroll", updateEdges);
       window.removeEventListener("resize", updateEdges);
     };
-  }, []);
+  }, [products.length]);
+
+  if (products.length === 0) {
+    return null;
+  }
 
   function scrollByCard(direction: -1 | 1) {
     const track = trackRef.current;
@@ -118,12 +149,13 @@ export function FeaturedCarousel() {
             <div className="zf-carousel-head__copy">
               <span className="zf-eyebrow">Featured pieces</span>
               <h2 className="zf-heading" id="featured-title">
-                The pieces everyone is living with.
+                {heading}
               </h2>
-              <p className="zf-lede" style={{ maxWidth: 540 }}>
-                Sample product cards for the preview. In the storefront these
-                will connect to live inventory, finishes, and lead times.
-              </p>
+              {lede ? (
+                <p className="zf-lede" style={{ maxWidth: 540 }}>
+                  {lede}
+                </p>
+              ) : null}
             </div>
             <div className="zf-carousel-nav">
               <button
@@ -162,46 +194,7 @@ export function FeaturedCarousel() {
           onDragStart={(event) => event.preventDefault()}
         >
           {products.map((product) => (
-            <article className="zf-product" key={product.name}>
-              <div className="zf-product__media">
-                <SmartImage
-                  alt={`${product.name} product photo`}
-                  sizes="(max-width: 560px) 78vw, 320px"
-                  tone={product.tone}
-                  label="Product"
-                />
-                {product.soldOut ? (
-                  <span className="zf-product__badge">Sold out</span>
-                ) : null}
-                <button
-                  type="button"
-                  className="zf-quickview"
-                  aria-label={`Quick view ${product.name}`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  Quick view
-                </button>
-              </div>
-              <div className="zf-product__body">
-                <span className="zf-product__meta">{product.category}</span>
-                <h3 className="zf-product__name">{product.name}</h3>
-                <div
-                  className={`zf-product__price${
-                    product.salePrice ? " zf-product__price--sale" : ""
-                  }`}
-                >
-                  {product.salePrice ? (
-                    <>
-                      <s>{product.price}</s>
-                      <strong>{product.salePrice}</strong>
-                      <span className="zf-product__meta">Sale</span>
-                    </>
-                  ) : (
-                    <strong>{product.price}</strong>
-                  )}
-                </div>
-              </div>
-            </article>
+            <ProductCard key={product.id} product={product} />
           ))}
         </div>
       </div>

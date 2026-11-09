@@ -1,9 +1,38 @@
+import { rooms as previewRooms } from "@/app/design-preview/preview-data";
 import { Reveal } from "@/components/motion/reveal";
-import { rooms } from "@/app/design-preview/preview-data";
-import { ArrowRightIcon } from "./icons";
-import { SmartImage } from "./smart-image";
+import { ArrowRightIcon } from "@/components/design/icons";
+import { SmartImage } from "@/components/design/smart-image";
 
-export function Rooms({ images }: { images: Array<string | null> }) {
+export type RoomTone = 1 | 2 | 3 | 4 | 5 | 6;
+
+export type RoomTile = {
+  name: string;
+  href: string;
+  /** Pre-formatted piece count (e.g. "2 pieces"); hidden when null. */
+  count?: string | null;
+  tone: RoomTone;
+  image?: string | null;
+};
+
+const PREVIEW_TILES: RoomTile[] = previewRooms.map((room) => ({
+  name: room.name,
+  href: "#featured",
+  count: room.pieces,
+  tone: room.tone,
+  image: null,
+}));
+
+export function Rooms({
+  images = [],
+  tiles = PREVIEW_TILES,
+}: {
+  images?: Array<string | null>;
+  tiles?: RoomTile[];
+}) {
+  if (tiles.length === 0) {
+    return null;
+  }
+
   return (
     <section className="zf-section" id="rooms" aria-labelledby="rooms-title">
       <div className="zf-container">
@@ -22,11 +51,11 @@ export function Rooms({ images }: { images: Array<string | null> }) {
 
         <Reveal variant="rise">
           <div className="zf-rooms">
-            {rooms.map((room, index) => (
-              <a className="zf-room" href="#featured" key={room.name}>
+            {tiles.map((room, index) => (
+              <a className="zf-room" href={room.href} key={room.name}>
                 <div className="zf-room__media">
                   <SmartImage
-                    src={images[index] ?? undefined}
+                    src={room.image ?? images[index] ?? undefined}
                     alt={`${room.name} collection`}
                     sizes="(max-width: 760px) 50vw, (max-width: 1023px) 40vw, 33vw"
                     tone={room.tone}
@@ -37,7 +66,9 @@ export function Rooms({ images }: { images: Array<string | null> }) {
                 <span className="zf-room__content">
                   <span>
                     <span className="zf-room__name">{room.name}</span>
-                    <span className="zf-room__count">{room.pieces}</span>
+                    {room.count ? (
+                      <span className="zf-room__count">{room.count}</span>
+                    ) : null}
                   </span>
                   <span className="zf-room__explore">
                     <span>Explore</span>
