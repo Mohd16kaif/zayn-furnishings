@@ -445,11 +445,263 @@ html[data-zf-theme="dark"] .zf {
   height: 64px;
 }
 
+.zf-nav__utility {
+  max-height: 48px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  transition:
+    max-height 260ms ease,
+    opacity 260ms ease,
+    visibility 260ms ease;
+}
+
+.zf-nav--scrolled .zf-nav__utility {
+  max-height: 0;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.zf-nav__utility-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding-block: 4px;
+}
+
+.zf-nav__contact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.zf-nav__contact a {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.zf-nav__contact a:hover {
+  color: var(--brand);
+}
+
+.zf-nav__utility .zf-zip__trigger {
+  padding: 0;
+  font-size: 9px;
+}
+
+.zf-nav__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-self: start;
+  min-width: 0;
+  width: 100%;
+}
+
+.zf-nav__search-desktop {
+  width: min(320px, 100%);
+  min-width: 0;
+}
+
+.zf-nav__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+}
+
+.zf-nav__actions--mobile {
+  display: none;
+}
+
+.zf-nav__categories-row {
+  border-top: 1px solid var(--line);
+  background: var(--nav-bg);
+}
+
+.zf-nav__links {
+  flex-wrap: wrap;
+  row-gap: 0;
+  padding-block: 2px;
+}
+
+.zf-nav__mobile-search {
+  display: none;
+  padding-block: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/* Search suggestions */
+
+.zf-search-suggest {
+  position: relative;
+  width: 100%;
+}
+
+.zf-search-suggest__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.zf-search-suggest__icon {
+  position: absolute;
+  left: 14px;
+  display: inline-flex;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.zf-search-suggest__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.zf-search-suggest input {
+  width: 100%;
+  height: 44px;
+  padding: 0 16px 0 42px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  outline: none;
+}
+
+.zf-search-suggest input::placeholder {
+  color: var(--muted);
+}
+
+.zf-search-suggest input:focus-visible {
+  border-color: var(--gold);
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.zf-search-suggest__list {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  z-index: 140;
+  max-height: min(68vh, 520px);
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  box-shadow: var(--shadow-soft);
+}
+
+.zf-search-suggest__option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.zf-search-suggest__option.is-active,
+.zf-search-suggest__option:hover {
+  background: var(--bg-soft);
+}
+
+.zf-search-suggest__option--category {
+  gap: 10px;
+}
+
+.zf-search-suggest__option--all {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+
+.zf-search-suggest__thumb {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  background: var(--bg-tint);
+}
+
+.zf-search-suggest__thumb .zf-photo {
+  position: absolute;
+  inset: 0;
+}
+
+.zf-search-suggest__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.zf-search-suggest__name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zf-search-suggest__price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.zf-search-suggest__price strong {
+  font-weight: 500;
+}
+
+.zf-search-suggest__price s {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.zf-search-suggest__price--sale strong {
+  color: var(--gold);
+}
+
+.zf-search-suggest__kind {
+  flex: none;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.zf-search-suggest__all {
+  color: var(--brand);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.zf-search-suggest__empty {
+  padding: 14px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .zf-wordmark {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-self: start;
+  justify-self: center;
   line-height: 1;
   color: var(--ink);
 }
@@ -763,6 +1015,16 @@ html[data-zf-theme="dark"] .zf {
   font-family: var(--font-serif);
   font-size: 28px;
   line-height: 1;
+}
+
+.zf-drawer__utility {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }
 
 .zf-drawer__footer {
@@ -2005,6 +2267,10 @@ html.lenis body {
     letter-spacing: 0.13em;
   }
 
+  .zf-nav__search-desktop {
+    width: min(260px, 100%);
+  }
+
   .zf-footer__inner {
     grid-template-columns: 1.4fr repeat(3, 1fr);
   }
@@ -2021,11 +2287,36 @@ html.lenis body {
   }
 
   .zf-nav__inner {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto 1fr;
+    height: 64px;
+  }
+
+  .zf-nav--scrolled .zf-nav__inner {
+    height: 56px;
+  }
+
+  .zf-nav__utility,
+  .zf-nav__categories-row,
+  .zf-nav__search-desktop,
+  .zf-nav__actions--desktop {
+    display: none;
   }
 
   .zf-nav__hamburger {
     display: inline-flex;
+  }
+
+  .zf-nav__actions--mobile {
+    display: flex;
+  }
+
+  .zf-nav__mobile-search {
+    display: block;
+  }
+
+  .zf-nav__left {
+    width: auto;
+    justify-self: start;
   }
 
   .zf-mega {
@@ -4454,5 +4745,17 @@ html[data-zf-theme="dark"] .zf-skeleton::after {
   .zf-cart-item__line {
     grid-column: 1 / -1;
     text-align: right;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zf-nav__utility,
+  .zf-nav__inner,
+  .zf-nav__link::after,
+  .zf-mega,
+  .zf-drawer__panel,
+  .zf-drawer__scrim,
+  .zf-drawer__links li {
+    transition: none;
   }
 }

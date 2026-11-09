@@ -127,7 +127,9 @@ export function ZipControl() {
     }
   }
 
-  const label = savedZip ? `Delivering to ${savedZip}` : "Delivery";
+  const label = savedZip
+    ? `Delivering to ${savedZip}`
+    : "Delivering to ZIP";
 
   return (
     <div className="zf-zip">

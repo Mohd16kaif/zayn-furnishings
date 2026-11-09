@@ -76,6 +76,30 @@ const EMPTY_CART_VALIDATION: CartValidation = {
     DEFAULT_STORE_SETTINGS.free_delivery_threshold_cents,
 };
 
+export type SearchSuggestProduct = {
+  name: string;
+  slug: string;
+  price_cents: number;
+  sale_price_cents: number | null;
+  primary_image_url: string | null;
+  in_stock: boolean;
+};
+
+export type SearchSuggestCategory = {
+  name: string;
+  slug: string;
+};
+
+export type SearchSuggestions = {
+  products: SearchSuggestProduct[];
+  categories: SearchSuggestCategory[];
+};
+
+const EMPTY_SEARCH_SUGGESTIONS: SearchSuggestions = {
+  products: [],
+  categories: [],
+};
+
 export type CartValidateItem = {
   product_id: string;
   quantity: number;
@@ -219,6 +243,19 @@ function isCartValidation(value: unknown): value is CartValidation {
   );
 }
 
+function isSearchSuggestions(value: unknown): value is SearchSuggestions {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    Array.isArray(candidate.products) &&
+    Array.isArray(candidate.categories)
+  );
+}
+
 export function getCategories(): Promise<ApiResult<PublicCategoryNode[]>> {
   return safeGet("/categories", [], isCategoryNodeArray);
 }
@@ -293,6 +330,19 @@ export function getProduct(
   slug: string,
 ): Promise<ApiResult<PublicProductDetail>> {
   return safeGet(`/products/${encodeURIComponent(slug)}`, EMPTY_PRODUCT_DETAIL, isProductDetail);
+}
+
+export function getSearchSuggestions(
+  query: string,
+): Promise<ApiResult<SearchSuggestions>> {
+  const search = new URLSearchParams({ q: query });
+
+  return safeGet(
+    `/search/suggest?${search.toString()}`,
+    EMPTY_SEARCH_SUGGESTIONS,
+    isSearchSuggestions,
+    30,
+  );
 }
 
 /** Live cart validation (no caching) — prices must always come from the API. */

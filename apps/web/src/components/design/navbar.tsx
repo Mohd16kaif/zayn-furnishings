@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import type { PublicCategoryNode, PublicStoreSettings } from "@zayn/shared";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import type {
+  PublicCategoryNode,
+  PublicStoreSettings,
+} from "@zayn/shared";
 import { formatCents } from "@/lib/money";
 import { useCartCount } from "./cart-provider";
 import {
@@ -14,6 +22,7 @@ import {
   SearchIcon,
   UserIcon,
 } from "./icons";
+import { SearchCombobox } from "./search-combobox";
 import { SmartImage } from "./smart-image";
 import { ThemeToggle } from "./theme-toggle";
 import { ZipControl } from "./zip-control";
@@ -28,13 +37,35 @@ function megaId(category: PublicCategoryNode): string {
   return `zf-mega-${category.slug}`;
 }
 
+function CartIconLink({ count }: { count: number }) {
+  return (
+    <Link
+      className="zf-icon-btn"
+      href="/cart"
+      aria-label={`Cart${
+        count > 0
+          ? `, ${count} item${count === 1 ? "" : "s"}`
+          : " is empty"
+      }`}
+    >
+      <BagIcon />
+      {count > 0 ? (
+        <span className="zf-icon-btn__badge" aria-hidden="true">
+          {count > 99 ? "99+" : count}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
 export function Navbar({ categories, live, settings }: NavbarProps) {
   const [scrolled, setScrolled] = useState(false);
   const [openMega, setOpenMega] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const triggerRefs = useRef(new Map<string, HTMLButtonElement | null>());
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
   const cartCount = useCartCount();
 
   const registerTrigger = useCallback(
@@ -42,10 +73,6 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
       triggerRefs.current.set(slug, element);
     },
     [],
-  );
-
-  const saleCategory = categories.find(
-    (category) => category.slug === "sale" || category.slug === "deals",
   );
 
   useEffect(() => {
@@ -71,16 +98,18 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
 
       if (drawerOpen) {
         setDrawerOpen(false);
+        hamburgerRef.current?.focus();
       }
 
-      if (searchOpen) {
-        setSearchOpen(false);
+      if (mobileSearchOpen) {
+        setMobileSearchOpen(false);
+        searchButtonRef.current?.focus();
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openMega, drawerOpen, searchOpen]);
+  }, [openMega, drawerOpen, mobileSearchOpen]);
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -89,199 +118,237 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
     return () => {
       document.body.style.overflow = previousOverflow;
     };
   }, [drawerOpen]);
 
-  function onSearchSubmit(event: FormEvent<HTMLFormElement>) {
-    // The native GET submit navigates to /search?q=... — no box to clear.
-    setSearchOpen(false);
-    event.currentTarget.reset();
+  function closeMobileSearch(returnFocus = true) {
+    setMobileSearchOpen(false);
+
+    if (returnFocus) {
+      searchButtonRef.current?.focus();
+    }
   }
 
   const thresholdText = formatCents(settings.free_delivery_threshold_cents);
+  const phoneHref = settings.phone
+    ? `tel:${settings.phone.replace(/[^\d+]/g, "")}`
+    : null;
 
   return (
     <>
       <header className={`zf-nav${scrolled ? " zf-nav--scrolled" : ""}`}>
-      <div className="zf-container">
-        <div className="zf-nav__inner">
-          <Link className="zf-wordmark" href="/" aria-label="Zayn Furnishings home">
-            <span className="zf-wordmark__top">ZAYN</span>
-            <span className="zf-wordmark__bottom">Furnishings</span>
-          </Link>
-
-          <nav aria-label="Main navigation">
-            <ul className="zf-nav__links">
-              {categories.map((category) => (
-                <li
-                  key={category.slug}
-                  className="zf-nav__item zf-mega-wrap"
-                  onMouseEnter={() => setOpenMega(category.slug)}
-                  onMouseLeave={() => setOpenMega(null)}
-                  onFocus={() => setOpenMega(category.slug)}
-                  onBlur={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget as HTMLElement | null)) {
-                      setOpenMega(null);
-                    }
-                  }}
-                >
-                  <button
-                    ref={(element) => registerTrigger(category.slug, element)}
-                    type="button"
-                    className="zf-nav__link"
-                    aria-expanded={openMega === category.slug}
-                    aria-controls={megaId(category)}
-                    onClick={() =>
-                      setOpenMega(openMega === category.slug ? null : category.slug)
-                    }
-                  >
-                    {category.name}
-                    <ChevronDownIcon className="zf-nav__chevron" />
-                  </button>
-
-                  <div
-                    id={megaId(category)}
-                    className={`zf-mega${openMega === category.slug ? " is-open" : ""}`}
-                  >
-                    <div className="zf-mega__grid">
-                      <div className="zf-mega__col">
-                        {category.children.length > 0 ? (
-                          <>
-                            <h3>Shop {category.name}</h3>
-                            <ul>
-                              {category.children.map((child) => (
-                                <li key={child.slug}>
-                                  <Link href={`/c/${child.slug}`} onClick={() => setOpenMega(null)}>
-                                    {child.name}
-                                  </Link>
-                                </li>
-                              ))}
-                            </ul>
-                          </>
-                        ) : (
-                          <h3>Shop {category.name}</h3>
-                        )}
-                      </div>
-
-                      {category.image_url ? (
-                        <Link
-                          className="zf-mega__tile"
-                          href={`/c/${category.slug}`}
-                          onClick={() => setOpenMega(null)}
-                        >
-                          <SmartImage
-                            src={category.image_url}
-                            alt={`${category.name} collection`}
-                            sizes="(max-width: 1023px) 0px, 240px"
-                            tone={2}
-                            label={category.name}
-                          />
-                          <span className="zf-mega__tile-label">
-                            <span>{category.name}</span>
-                            <small>
-                              {category.product_count} item
-                              {category.product_count === 1 ? "" : "s"}
-                            </small>
-                          </span>
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-                </li>
-              ))}
-
-              {saleCategory ? (
-                <li className="zf-nav__item">
-                  <Link
-                    className="zf-nav__link zf-nav__link--sale"
-                    href={`/c/${saleCategory.slug}`}
-                  >
-                    Sale
-                  </Link>
-                </li>
+        <div className="zf-nav__utility">
+          <div className="zf-container zf-nav__utility-inner">
+            <div className="zf-nav__contact">
+              {phoneHref ? (
+                <a href={phoneHref}>{settings.phone}</a>
               ) : null}
-            </ul>
-          </nav>
-
-          <div className="zf-nav__actions">
-            <form
-              action="/search"
-              method="get"
-              className={`zf-search${searchOpen ? " is-open" : ""}`}
-              role="search"
-              onSubmit={onSearchSubmit}
-            >
-              <label className="zf-sr-only" htmlFor="zf-search-input">
-                Search products
-              </label>
-              <input
-                id="zf-search-input"
-                name="q"
-                type="search"
-                placeholder="Search"
-                aria-hidden={!searchOpen}
-                tabIndex={searchOpen ? undefined : -1}
-                ref={searchInputRef}
-              />
-              <button
-                type="button"
-                className="zf-icon-btn"
-                aria-label={searchOpen ? "Close search" : "Open search"}
-                aria-expanded={searchOpen}
-                onClick={() => {
-                  if (searchOpen) {
-                    setSearchOpen(false);
-                    return;
-                  }
-                  setSearchOpen(true);
-                  requestAnimationFrame(() => searchInputRef.current?.focus());
-                }}
-              >
-                <SearchIcon />
-              </button>
-            </form>
-
+              {settings.email ? (
+                <a href={`mailto:${settings.email}`}>{settings.email}</a>
+              ) : null}
+            </div>
             <ZipControl />
-
-            <Link className="zf-icon-btn zf-nav__action--optional" href="/account" aria-label="Account">
-              <UserIcon />
-            </Link>
-            <Link className="zf-icon-btn zf-nav__action--optional" href="/wishlist" aria-label="Wishlist">
-              <HeartIcon />
-            </Link>
-            <Link
-              className="zf-icon-btn"
-              href="/cart"
-              aria-label={`Cart${cartCount > 0 ? `, ${cartCount} item${cartCount === 1 ? "" : "s"}` : " is empty"}`}
-            >
-              <BagIcon />
-              {cartCount > 0 ? (
-                <span className="zf-icon-btn__badge" aria-hidden="true">
-                  {cartCount > 99 ? "99+" : cartCount}
-                </span>
-              ) : null}
-            </Link>
-            <ThemeToggle />
-            <button
-              type="button"
-              className="zf-icon-btn zf-nav__hamburger"
-              aria-label="Open menu"
-              aria-expanded={drawerOpen}
-              onClick={() => setDrawerOpen(true)}
-            >
-              <MenuIcon />
-            </button>
           </div>
         </div>
-      </div>
 
-      {!live ? (
-        <div className="zf-api-notice" role="status">
-          The catalog is a little slow right now — some menus are loading.
+        <div className="zf-container">
+          <div className="zf-nav__inner">
+            <div className="zf-nav__left">
+              <button
+                ref={hamburgerRef}
+                type="button"
+                className="zf-icon-btn zf-nav__hamburger"
+                aria-label="Open menu"
+                aria-expanded={drawerOpen}
+                onClick={() => setDrawerOpen(true)}
+              >
+                <MenuIcon />
+              </button>
+
+              <div className="zf-nav__search-desktop">
+                <SearchCombobox />
+              </div>
+            </div>
+
+            <Link
+              className="zf-wordmark"
+              href="/"
+              aria-label="Zayn Furnishings home"
+            >
+              <span className="zf-wordmark__top">ZAYN</span>
+              <span className="zf-wordmark__bottom">Furnishings</span>
+            </Link>
+
+            <div className="zf-nav__right">
+              <div className="zf-nav__actions zf-nav__actions--desktop">
+                <Link
+                  className="zf-icon-btn"
+                  href="/account"
+                  aria-label="Account"
+                >
+                  <UserIcon />
+                </Link>
+                <Link
+                  className="zf-icon-btn"
+                  href="/wishlist"
+                  aria-label="Wishlist"
+                >
+                  <HeartIcon />
+                </Link>
+                <CartIconLink count={cartCount} />
+                <ThemeToggle />
+              </div>
+
+              <div className="zf-nav__actions zf-nav__actions--mobile">
+                <button
+                  ref={searchButtonRef}
+                  type="button"
+                  className="zf-icon-btn"
+                  aria-label={
+                    mobileSearchOpen ? "Close search" : "Open search"
+                  }
+                  aria-expanded={mobileSearchOpen}
+                  aria-controls={
+                    mobileSearchOpen ? "zf-mobile-search" : undefined
+                  }
+                  onClick={() =>
+                    mobileSearchOpen
+                      ? closeMobileSearch(true)
+                      : setMobileSearchOpen(true)
+                  }
+                >
+                  <SearchIcon />
+                </button>
+                <CartIconLink count={cartCount} />
+              </div>
+            </div>
+          </div>
         </div>
-      ) : null}
+
+        {categories.length > 0 ? (
+          <div className="zf-nav__categories-row">
+            <div className="zf-container">
+              <ul className="zf-nav__links">
+                {categories.map((category) => (
+                  <li
+                    key={category.slug}
+                    className="zf-nav__item zf-mega-wrap"
+                    onMouseEnter={() => setOpenMega(category.slug)}
+                    onMouseLeave={() => setOpenMega(null)}
+                    onFocus={() => setOpenMega(category.slug)}
+                    onBlur={(event) => {
+                      if (
+                        !event.currentTarget.contains(
+                          event.relatedTarget as HTMLElement | null,
+                        )
+                      ) {
+                        setOpenMega(null);
+                      }
+                    }}
+                  >
+                    <button
+                      ref={(element) =>
+                        registerTrigger(category.slug, element)
+                      }
+                      type="button"
+                      className="zf-nav__link"
+                      aria-expanded={openMega === category.slug}
+                      aria-controls={megaId(category)}
+                      onClick={() =>
+                        setOpenMega(
+                          openMega === category.slug
+                            ? null
+                            : category.slug,
+                        )
+                      }
+                    >
+                      {category.name}
+                      <ChevronDownIcon className="zf-nav__chevron" />
+                    </button>
+
+                    <div
+                      id={megaId(category)}
+                      className={`zf-mega${openMega === category.slug ? " is-open" : ""}`}
+                    >
+                      <div className="zf-mega__grid">
+                        <div className="zf-mega__col">
+                          {category.children.length > 0 ? (
+                            <>
+                              <h3>Shop {category.name}</h3>
+                              <ul>
+                                {category.children.map((child) => (
+                                  <li key={child.slug}>
+                                    <Link
+                                      href={`/c/${child.slug}`}
+                                      onClick={() =>
+                                        setOpenMega(null)
+                                      }
+                                    >
+                                      {child.name}
+                                    </Link>
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : (
+                            <h3>Shop {category.name}</h3>
+                          )}
+                        </div>
+
+                        {category.image_url ? (
+                          <Link
+                            className="zf-mega__tile"
+                            href={`/c/${category.slug}`}
+                            onClick={() => setOpenMega(null)}
+                          >
+                            <SmartImage
+                              src={category.image_url}
+                              alt={`${category.name} collection`}
+                              sizes="(max-width: 1023px) 0px, 240px"
+                              tone={2}
+                              label={category.name}
+                            />
+                            <span className="zf-mega__tile-label">
+                              <span>{category.name}</span>
+                              <small>
+                                {category.product_count} item
+                                {category.product_count === 1
+                                  ? ""
+                                  : "s"}
+                              </small>
+                            </span>
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+
+        {mobileSearchOpen ? (
+          <div className="zf-nav__mobile-search" id="zf-mobile-search">
+            <div className="zf-container">
+              <SearchCombobox
+                autoFocus
+                onEscape={() => closeMobileSearch(true)}
+                onNavigate={() => setMobileSearchOpen(false)}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {!live ? (
+          <div className="zf-api-notice" role="status">
+            The catalog is a little slow right now — some menus are
+            loading.
+          </div>
+        ) : null}
       </header>
 
       <div className={`zf-drawer${drawerOpen ? " is-open" : ""}`}>
@@ -297,11 +364,19 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
           role="dialog"
           aria-modal="true"
           aria-label="Mobile menu"
+          aria-hidden={!drawerOpen}
+          inert={!drawerOpen}
         >
           <div className="zf-drawer__top">
-            <Link className="zf-wordmark" href="/" onClick={() => setDrawerOpen(false)}>
+            <Link
+              className="zf-wordmark"
+              href="/"
+              onClick={() => setDrawerOpen(false)}
+            >
               <span className="zf-wordmark__top">ZAYN</span>
-              <span className="zf-wordmark__bottom">Furnishings</span>
+              <span className="zf-wordmark__bottom">
+                Furnishings
+              </span>
             </Link>
             <button
               type="button"
@@ -316,7 +391,10 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
           <ul className="zf-drawer__links">
             {categories.map((category) => (
               <li key={category.slug}>
-                <Link href={`/c/${category.slug}`} onClick={() => setDrawerOpen(false)}>
+                <Link
+                  href={`/c/${category.slug}`}
+                  onClick={() => setDrawerOpen(false)}
+                >
                   {category.name}
                   <span aria-hidden="true">+</span>
                 </Link>
@@ -324,7 +402,10 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
                   <ul className="zf-drawer__sublinks">
                     {category.children.map((child) => (
                       <li key={child.slug}>
-                        <Link href={`/c/${child.slug}`} onClick={() => setDrawerOpen(false)}>
+                        <Link
+                          href={`/c/${child.slug}`}
+                          onClick={() => setDrawerOpen(false)}
+                        >
                           {child.name}
                         </Link>
                       </li>
@@ -334,34 +415,39 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
               </li>
             ))}
 
-            {saleCategory ? (
-              <li>
-                <Link className="zf-drawer__sale" href={`/c/${saleCategory.slug}`} onClick={() => setDrawerOpen(false)}>
-                  Sale
-                  <span aria-hidden="true">+</span>
-                </Link>
-              </li>
-            ) : null}
-
             <li>
-              <Link href="/search" onClick={() => setDrawerOpen(false)}>
+              <Link
+                href="/search"
+                onClick={() => setDrawerOpen(false)}
+              >
                 Search
                 <span aria-hidden="true">+</span>
               </Link>
             </li>
             <li>
-              <Link href="/account" onClick={() => setDrawerOpen(false)}>
+              <Link
+                href="/account"
+                onClick={() => setDrawerOpen(false)}
+              >
                 Account
                 <span aria-hidden="true">+</span>
               </Link>
             </li>
             <li>
-              <Link href="/wishlist" onClick={() => setDrawerOpen(false)}>
+              <Link
+                href="/wishlist"
+                onClick={() => setDrawerOpen(false)}
+              >
                 Wishlist
                 <span aria-hidden="true">+</span>
               </Link>
             </li>
           </ul>
+
+          <div className="zf-drawer__utility">
+            <ZipControl />
+            <ThemeToggle />
+          </div>
 
           <div className="zf-drawer__footer">
             {thresholdText
@@ -369,7 +455,9 @@ export function Navbar({ categories, live, settings }: NavbarProps) {
               : null}
             <br />
             {settings.email ? (
-              <a href={`mailto:${settings.email}`}>{settings.email}</a>
+              <a href={`mailto:${settings.email}`}>
+                {settings.email}
+              </a>
             ) : null}
           </div>
         </div>
