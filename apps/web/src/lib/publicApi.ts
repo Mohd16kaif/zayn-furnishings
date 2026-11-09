@@ -68,6 +68,38 @@ const EMPTY_DELIVERY_CHECK: PublicDeliveryCheck = {
   free_over_cents: null,
 };
 
+const EMPTY_CART_VALIDATION: CartValidation = {
+  items: [],
+  unavailable: [],
+  subtotal_cents: 0,
+  free_delivery_threshold_cents:
+    DEFAULT_STORE_SETTINGS.free_delivery_threshold_cents,
+};
+
+export type CartValidateItem = {
+  product_id: string;
+  quantity: number;
+};
+
+export type CartValidatedItem = {
+  id: string;
+  slug: string;
+  name: string;
+  price_cents: number;
+  sale_price_cents: number | null;
+  effective_price_cents: number;
+  primary_image_url: string | null;
+  in_stock: boolean;
+  available: boolean;
+};
+
+export type CartValidation = {
+  items: CartValidatedItem[];
+  unavailable: string[];
+  subtotal_cents: number;
+  free_delivery_threshold_cents: number;
+};
+
 export type ApiResult<T> = {
   ok: boolean;
   data: T;
@@ -78,7 +110,7 @@ function apiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
 }
 
-function requestHeaders(): HeadersInit {
+function requestHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const key = process.env.STOREFRONT_API_KEY;
 
@@ -172,6 +204,21 @@ function isProductDetail(value: unknown): value is PublicProductDetail {
   return typeof value === "object" && value !== null && value !== undefined;
 }
 
+function isCartValidation(value: unknown): value is CartValidation {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    Array.isArray(candidate.items) &&
+    Array.isArray(candidate.unavailable) &&
+    typeof candidate.subtotal_cents === "number" &&
+    typeof candidate.free_delivery_threshold_cents === "number"
+  );
+}
+
 export function getCategories(): Promise<ApiResult<PublicCategoryNode[]>> {
   return safeGet("/categories", [], isCategoryNodeArray);
 }
@@ -246,6 +293,51 @@ export function getProduct(
   slug: string,
 ): Promise<ApiResult<PublicProductDetail>> {
   return safeGet(`/products/${encodeURIComponent(slug)}`, EMPTY_PRODUCT_DETAIL, isProductDetail);
+}
+
+/** Live cart validation (no caching) — prices must always come from the API. */
+export async function validateCart(
+  items: CartValidateItem[],
+): Promise<ApiResult<CartValidation>> {
+  const url = `${apiUrl()}/api/public/cart/validate`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...requestHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ items }),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        data: EMPTY_CART_VALIDATION,
+        error: `HTTP ${response.status}`,
+      };
+    }
+
+    const parsed: unknown = await response.json();
+
+    if (!isCartValidation(parsed)) {
+      return {
+        ok: false,
+        data: EMPTY_CART_VALIDATION,
+        error: "Unexpected response shape",
+      };
+    }
+
+    return { ok: true, data: parsed };
+  } catch (error) {
+    return {
+      ok: false,
+      data: EMPTY_CART_VALIDATION,
+      error: error instanceof Error ? error.message : "Network error",
+    };
+  }
 }
 
 /** Live check (no caching) — used by the /api/zip-check route handler. */

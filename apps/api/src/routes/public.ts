@@ -194,6 +194,17 @@ const deliveryQuerySchema = z.object({
     .regex(/^\d{5}$/, "Enter a 5-digit US ZIP code."),
 });
 
+const cartValidateSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        product_id: z.string().uuid(),
+        quantity: z.number().int().min(1).max(10),
+      }),
+    )
+    .max(50),
+});
+
 const DEFAULT_STORE_SETTINGS = {
   store_name: "Zayn Furnishings",
   phone: "",
@@ -219,6 +230,22 @@ function coerceSettingValue(key: string, value: unknown): unknown | undefined {
     default:
       return undefined;
   }
+}
+
+async function readFreeDeliveryThreshold(): Promise<number> {
+  const rows = await db!.select().from(storeSettings);
+  let threshold: number =
+    DEFAULT_STORE_SETTINGS.free_delivery_threshold_cents;
+
+  for (const row of rows) {
+    const value = coerceSettingValue(row.key, row.value);
+
+    if (row.key === "free_delivery_threshold_cents" && typeof value === "number") {
+      threshold = value;
+    }
+  }
+
+  return threshold;
 }
 
 export const publicRouter = Router();
@@ -662,6 +689,112 @@ publicRouter.get(
       });
     } catch (error) {
       sendError(res, error, "Failed to load public product");
+    }
+  },
+);
+
+publicRouter.post(
+  "/cart/validate",
+  async (req: Request, res: Response) => {
+    const parsed = cartValidateSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!requireDatabase(res)) {
+      return;
+    }
+
+    res.set("Cache-Control", "no-store");
+
+    try {
+      const requested = new Map<string, number>();
+
+      for (const item of parsed.data.items) {
+        requested.set(
+          item.product_id,
+          (requested.get(item.product_id) ?? 0) + item.quantity,
+        );
+      }
+
+      const productIds = Array.from(requested.keys());
+
+      if (productIds.length === 0) {
+        res.json({
+          items: [],
+          unavailable: [],
+          subtotal_cents: 0,
+          free_delivery_threshold_cents: await readFreeDeliveryThreshold(),
+        });
+        return;
+      }
+
+      const rows = await db!
+        .select()
+        .from(products)
+        .where(inArray(products.id, productIds));
+
+      const productsById = new Map(rows.map((row) => [row.id, row]));
+      const activeRows = rows.filter((row) => row.status === "active");
+      const primaryImages = await primaryImagesByProduct(
+        activeRows.map((row) => row.id),
+      );
+
+      const unavailable: string[] = [];
+      const items: Array<{
+        id: string;
+        slug: string;
+        name: string;
+        price_cents: number;
+        sale_price_cents: number | null;
+        effective_price_cents: number;
+        primary_image_url: string | null;
+        in_stock: boolean;
+        available: true;
+      }> = [];
+      let subtotalCents = 0;
+
+      for (const [productId, quantity] of requested) {
+        const product = productsById.get(productId);
+
+        if (!product || product.status !== "active") {
+          unavailable.push(productId);
+          continue;
+        }
+
+        const inStock = product.stockQty > 0;
+        const effectivePriceCents =
+          product.salePriceCents ?? product.priceCents;
+
+        items.push({
+          id: product.id,
+          slug: product.slug,
+          name: product.name,
+          price_cents: product.priceCents,
+          sale_price_cents: product.salePriceCents,
+          effective_price_cents: effectivePriceCents,
+          primary_image_url: primaryImages.get(product.id) ?? null,
+          in_stock: inStock,
+          available: true,
+        });
+
+        if (inStock) {
+          subtotalCents += effectivePriceCents * quantity;
+        }
+      }
+
+      const freeDeliveryThresholdCents = await readFreeDeliveryThreshold();
+
+      res.json({
+        items,
+        unavailable,
+        subtotal_cents: subtotalCents,
+        free_delivery_threshold_cents: freeDeliveryThresholdCents,
+      });
+    } catch (error) {
+      sendError(res, error, "Failed to validate cart");
     }
   },
 );

@@ -1,12 +1,17 @@
-import { PlaceholderPage } from "@/components/storefront/placeholder-page";
+import type { Metadata } from "next";
+import { getCategories } from "@/lib/publicApi";
+import { CartPageClient } from "./cart-page-client";
 
 export const instant = false;
 
-export default function CartPage() {
-  return (
-    <PlaceholderPage
-      title="Cart"
-      body="Your cart is empty. Checkout arrives with the next release."
-    />
-  );
+export const metadata: Metadata = {
+  title: "Cart",
+  description: "Review your cart and estimated delivery.",
+  robots: { index: false, follow: true },
+};
+
+export default async function CartPage() {
+  const { data: categories } = await getCategories();
+
+  return <CartPageClient categories={categories} />;
 }
