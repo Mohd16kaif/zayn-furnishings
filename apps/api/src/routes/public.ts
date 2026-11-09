@@ -10,6 +10,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   max,
   min,
@@ -68,6 +69,15 @@ function cacheGet(
   next: NextFunction,
 ): void {
   res.set("Cache-Control", PUBLIC_CACHE_CONTROL);
+  next();
+}
+
+function cacheGetShort(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  res.set("Cache-Control", "public, max-age=30");
   next();
 }
 
@@ -179,12 +189,17 @@ const productsQuerySchema = z.object({
   in_stock: optionalBooleanQuery(),
   material: z.string().trim().min(1).max(200).optional(),
   color: z.string().trim().min(1).max(200).optional(),
+  on_sale: optionalBooleanQuery(),
   sort: z
     .enum(["newest", "price_asc", "price_desc", "name"])
     .default("newest"),
   featured: optionalBooleanQuery(),
   page: z.coerce.number().int().min(1).default(1),
   page_size: z.coerce.number().int().min(1).max(48).default(24),
+});
+
+const suggestQuerySchema = z.object({
+  q: z.string().trim().min(2).max(40),
 });
 
 const deliveryQuerySchema = z.object({
@@ -361,6 +376,72 @@ publicRouter.get(
 );
 
 publicRouter.get(
+  "/search/suggest",
+  cacheGetShort,
+  async (req: Request, res: Response) => {
+    const parsed = suggestQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!requireDatabase(res)) {
+      return;
+    }
+
+    try {
+      const term = `%${escapeLikePattern(parsed.data.q)}%`;
+
+      const productRows = await db!
+        .select({ product: products })
+        .from(products)
+        .where(
+          and(
+            eq(products.status, "active"),
+            or(
+              ilike(products.name, term),
+              ilike(products.sku, term),
+            ),
+          ),
+        )
+        .orderBy(asc(products.name))
+        .limit(6);
+
+      const images = await primaryImagesByProduct(
+        productRows.map((row) => row.product.id),
+      );
+
+      const categoryRows = await db!
+        .select({ name: categories.name, slug: categories.slug })
+        .from(categories)
+        .where(
+          and(
+            eq(categories.isActive, true),
+            ilike(categories.name, term),
+          ),
+        )
+        .orderBy(asc(categories.name))
+        .limit(4);
+
+      res.json({
+        products: productRows.map((row) => ({
+          name: row.product.name,
+          slug: row.product.slug,
+          price_cents: row.product.priceCents,
+          sale_price_cents: row.product.salePriceCents,
+          primary_image_url: images.get(row.product.id) ?? null,
+          in_stock: row.product.stockQty > 0,
+        })),
+        categories: categoryRows,
+      });
+    } catch (error) {
+      sendError(res, error, "Failed to load search suggestions");
+    }
+  },
+);
+
+publicRouter.get(
   "/products",
   cacheGet,
   async (req: Request, res: Response) => {
@@ -383,6 +464,7 @@ publicRouter.get(
       in_stock,
       material,
       color,
+      on_sale,
       sort,
       featured,
       page,
@@ -456,6 +538,15 @@ publicRouter.get(
 
       if (color) {
         conditions.push(sql`lower(${products.color}) = lower(${color})`);
+      }
+
+      if (on_sale === true) {
+        conditions.push(
+          and(
+            isNotNull(products.salePriceCents),
+            lt(products.salePriceCents, products.priceCents),
+          )!,
+        );
       }
 
       if (featured !== undefined) {
