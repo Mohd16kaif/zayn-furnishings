@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
-import { getCategories } from "@/lib/publicApi";
+import { getCategories, getProducts } from "@/lib/publicApi";
+
+const PRODUCT_PAGE_SIZE = 48;
+const MAX_PRODUCT_PAGES = 1000;
 
 const baseUrl =
   process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -36,19 +39,62 @@ function categorySlugs(
   return slugs;
 }
 
+async function productSlugs(): Promise<string[]> {
+  const slugs: string[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (slugs.length < total && page <= MAX_PRODUCT_PAGES) {
+    const { data } = await getProducts({
+      page,
+      pageSize: PRODUCT_PAGE_SIZE,
+      sort: "newest",
+    });
+
+    total = data.total;
+
+    if (data.items.length === 0) {
+      break;
+    }
+
+    for (const item of data.items) {
+      slugs.push(item.slug);
+    }
+
+    if (data.items.length < PRODUCT_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return slugs;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const { data: categories } = await getCategories();
+  const [{ data: categories }, products] = await Promise.all([
+    getCategories(),
+    productSlugs(),
+  ]);
+
+  const now = new Date();
+  const productUrls = Array.from(new Set(products)).map((slug) => ({
+    url: `${baseUrl}/p/${slug}`,
+    lastModified: now,
+    changeFrequency: "weekly" as const,
+  }));
 
   return [
     ...staticPaths.map((path) => ({
       url: `${baseUrl}${path}`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: "weekly" as const,
     })),
     ...categorySlugs(categories).map((slug) => ({
       url: `${baseUrl}/c/${slug}`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: "weekly" as const,
     })),
+    ...productUrls,
   ];
 }
