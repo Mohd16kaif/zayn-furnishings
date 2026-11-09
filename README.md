@@ -98,3 +98,7 @@ Until `DATABASE_URL` is set, `GET /health` returns `db: false` — this is expec
 
 - Web → Vercel (root `apps/web`)
 - API → Render (root `apps/api`)
+
+## Troubleshooting
+
+- If the storefront styles disappear (plain unstyled HTML), delete `apps/web/.next` and restart the dev server — stale Turbopack CSS chunks can break stylesheet resolution.

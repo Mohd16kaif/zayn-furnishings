@@ -9,6 +9,7 @@ import { themeFontClass, themeSeedScript } from "@/components/design/fonts";
 import { ScrollProgress } from "@/components/motion/scroll-progress";
 import { SmoothScroll } from "@/components/motion/smooth-scroll";
 import { ThemeProvider } from "@/components/design/theme-provider";
+import "@/styles/theme.css";
 
 // The storefront shell fetches live catalog data, so navigation into this
 // segment is allowed to block (opts out of instant-navigation validation).
