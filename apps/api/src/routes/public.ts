@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import {
   and,
   asc,
@@ -19,6 +20,7 @@ import {
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
+import { env } from "../config/env";
 import { db } from "../db/client";
 import {
   categories,
@@ -33,11 +35,30 @@ import { sendError, sendValidationError } from "../lib/adminCatalog";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 
+function storefrontKeyMatches(req: Request): boolean {
+  const provided = req.get("x-storefront-key");
+  const expected = env.STOREFRONT_API_KEY;
+
+  if (!provided || !expected) {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const providedBuffer = Buffer.from(provided, "utf8");
+
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
 const publicRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 120,
   standardHeaders: "draft-8",
   legacyHeaders: false,
+  skip: (req: Request) => storefrontKeyMatches(req),
   message: { error: "Too many requests. Please try again in a minute." },
 });
 
@@ -69,6 +90,10 @@ function optionalBooleanQuery() {
     }
     return undefined;
   }, z.boolean().optional());
+}
+
+function escapeLikePattern(term: string): string {
+  return term.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 function numericValue(value: string | null): number | null {
@@ -370,7 +395,7 @@ publicRouter.get(
       }
 
       if (q) {
-        const term = `%${q}%`;
+        const term = `%${escapeLikePattern(q)}%`;
         const searchCondition = or(
           ilike(products.name, term),
           ilike(products.description, term),

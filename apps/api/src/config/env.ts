@@ -20,6 +20,7 @@ const envSchema = z.object({
   SUPABASE_ANON_KEY: optionalString,
   OWNER_EMAIL: optionalString,
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
+  STOREFRONT_API_KEY: optionalString,
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== "production") {
     return;
