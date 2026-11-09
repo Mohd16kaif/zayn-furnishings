@@ -7,6 +7,7 @@ import { adminAuthRouter } from "./routes/adminAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
 import { adminProductsRouter } from "./routes/adminProducts";
 import { healthRouter } from "./routes/health";
+import { publicRouter } from "./routes/public";
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use(healthRouter);
+app.use("/api/public", publicRouter);
 app.use("/admin", adminAuthRouter);
 app.use("/admin", adminCategoriesRouter);
 app.use("/admin", adminProductsRouter);
