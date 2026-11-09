@@ -256,6 +256,13 @@ function isSearchSuggestions(value: unknown): value is SearchSuggestions {
   );
 }
 
+/**
+ * Live category tree, ordered by the API's sort_order.
+ *
+ * Only active categories are returned. Owners can deactivate unused
+ * categories in /admin/categories to remove them from this menu (the
+ * category page still renders "Pieces arriving soon" for empty ones).
+ */
 export function getCategories(): Promise<ApiResult<PublicCategoryNode[]>> {
   return safeGet("/categories", [], isCategoryNodeArray);
 }
@@ -278,6 +285,7 @@ export type ProductQuery = {
   color?: string;
   sort?: "newest" | "price_asc" | "price_desc" | "name";
   featured?: boolean;
+  onSale?: boolean;
   page?: number;
   pageSize?: number;
 };
@@ -313,6 +321,9 @@ export function getProducts(
   }
   if (query.featured !== undefined) {
     search.set("featured", String(query.featured));
+  }
+  if (query.onSale !== undefined) {
+    search.set("on_sale", String(query.onSale));
   }
   if (query.page !== undefined) {
     search.set("page", String(query.page));

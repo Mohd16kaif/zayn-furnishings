@@ -238,6 +238,9 @@ export default async function CategoryPage({
             ) : null}
           </header>
 
+          {/* Empty categories stay reachable and show this state. Owners can
+              deactivate unused categories in /admin/categories to remove
+              them from the menu. */}
           {!hasCategoryProducts ? (
             <EmptyState
               title="Pieces arriving soon"

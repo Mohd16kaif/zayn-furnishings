@@ -72,12 +72,25 @@ async function productSlugs(): Promise<string[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [{ data: categories }, products] = await Promise.all([
-    getCategories(),
-    productSlugs(),
-  ]);
+  const [{ data: categories }, products, activeProducts, saleProducts] =
+    await Promise.all([
+      getCategories(),
+      productSlugs(),
+      getProducts({ page: 1, pageSize: 1 }),
+      getProducts({ page: 1, pageSize: 1, onSale: true }),
+    ]);
 
   const now = new Date();
+  const conditionalPaths: string[] = [];
+
+  if (activeProducts.data.total > 0) {
+    conditionalPaths.push("/new");
+  }
+
+  if (saleProducts.data.total > 0) {
+    conditionalPaths.push("/sale");
+  }
+
   const productUrls = Array.from(new Set(products)).map((slug) => ({
     url: `${baseUrl}/p/${slug}`,
     lastModified: now,
@@ -86,6 +99,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     ...staticPaths.map((path) => ({
+      url: `${baseUrl}${path}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+    })),
+    ...conditionalPaths.map((path) => ({
       url: `${baseUrl}${path}`,
       lastModified: now,
       changeFrequency: "weekly" as const,
