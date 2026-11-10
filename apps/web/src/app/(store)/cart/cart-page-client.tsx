@@ -26,7 +26,6 @@ import {
   getZipSnapshot,
   requestDelivery,
   subscribeZipCookie,
-  type DeliveryResult,
 } from "@/lib/deliveryClient";
 import { formatCents } from "@/lib/money";
 
@@ -61,6 +60,19 @@ export function CartPageClient({ categories }: CartPageClientProps) {
   const [validationError, setValidationError] = useState(false);
   const [announcement, setAnnouncement] = useState("");
 
+  const savedZip = useSyncExternalStore(
+    subscribeZipCookie,
+    getZipSnapshot,
+    getZipServerSnapshot,
+  );
+  const [zip, setZip] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState("");
+  const [zipValue, setZipValue] = useState("");
+  const [zipBusy, setZipBusy] = useState(false);
+  const [zipEditing, setZipEditing] = useState(false);
+
+  const activeZipForRequest = zip ?? savedZip;
+
   const requestBody = useMemo(
     () =>
       items.length === 0
@@ -70,8 +82,11 @@ export function CartPageClient({ categories }: CartPageClientProps) {
               product_id: item.productId,
               quantity: item.quantity,
             })),
+            ...(activeZipForRequest
+              ? { zip: activeZipForRequest }
+              : {}),
           }),
-    [items],
+    [items, activeZipForRequest],
   );
 
   useEffect(() => {
@@ -197,65 +212,13 @@ export function CartPageClient({ categories }: CartPageClientProps) {
     0,
   );
 
-  const savedZip = useSyncExternalStore(
-    subscribeZipCookie,
-    getZipSnapshot,
-    getZipServerSnapshot,
-  );
-  const [zip, setZip] = useState<string | null>(null);
-  const [delivery, setDelivery] = useState<DeliveryResult | null>(null);
-  const [deliveryError, setDeliveryError] = useState("");
-  const [zipValue, setZipValue] = useState("");
-  const [zipBusy, setZipBusy] = useState(false);
-  const [zipEditing, setZipEditing] = useState(false);
-
-  useEffect(() => {
-    if (!savedZip) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void (async () => {
-      const outcome = await requestDelivery(savedZip);
-
-      if (cancelled) {
-        return;
-      }
-
-      setDelivery(outcome.result);
-      setDeliveryError(outcome.error);
-      setZip(savedZip);
-      setZipValue(savedZip);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [savedZip]);
-
   const activeZip = zipEditing ? null : zip ?? savedZip;
+  const delivery = validation?.delivery ?? null;
   const deliveryAvailable = Boolean(activeZip && delivery?.available);
-  const freeOverCents =
-    validation?.free_delivery_threshold_cents ??
-    delivery?.free_over_cents ??
-    null;
-
-  let deliveryFeeCents = 0;
-
-  if (deliveryAvailable && delivery) {
-    if (delivery.fee_cents === 0) {
-      deliveryFeeCents = 0;
-    } else if (
-      freeOverCents !== null &&
-      subtotalCents >= freeOverCents
-    ) {
-      deliveryFeeCents = 0;
-    } else {
-      deliveryFeeCents = delivery.fee_cents ?? 0;
-    }
-  }
-
+  const deliveryFeeCents =
+    deliveryAvailable && delivery && !delivery.is_free
+      ? delivery.fee_cents ?? 0
+      : 0;
   const estimatedTotalCents = subtotalCents + deliveryFeeCents;
 
   function changeQuantity(row: CartRow, next: number) {
@@ -295,11 +258,9 @@ export function CartPageClient({ categories }: CartPageClientProps) {
     setZipEditing(false);
     setZipBusy(true);
     setDeliveryError("");
-    setDelivery(null);
 
-    const outcome = await requestDelivery(next);
+    const outcome = await requestDelivery(next, subtotalCents);
 
-    setDelivery(outcome.result);
     setDeliveryError(outcome.error);
     setZipValue(next);
     setZipBusy(false);
@@ -311,7 +272,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
   }
 
   function renderDelivery() {
-    if (zipBusy) {
+    if (zipBusy || (activeZip && pending)) {
       return (
         <p className="zf-cart-summary__delivery-note" aria-live="polite">
           Checking delivery
@@ -354,11 +315,12 @@ export function CartPageClient({ categories }: CartPageClientProps) {
       );
     }
 
-    if (deliveryError) {
+    if (deliveryError || validationError) {
       return (
         <div className="zf-cart-summary__delivery">
           <p className="zf-cart-summary__delivery-note zf-cart-summary__delivery-note--error">
-            {deliveryError}
+            {deliveryError ||
+              "We couldn't check delivery right now."}
           </p>
           <button
             type="button"
@@ -400,9 +362,13 @@ export function CartPageClient({ categories }: CartPageClientProps) {
       <div className="zf-cart-summary__delivery">
         <p className="zf-cart-summary__delivery-note">
           Delivery to {activeZip}:{" "}
-          {deliveryFeeCents === 0
+          {delivery.is_free
             ? "Free"
-            : formatDeliveryFee(deliveryFeeCents)}
+            : formatDeliveryFee(delivery.fee_cents ?? 0)}
+          {!delivery.is_free &&
+          delivery.free_over_cents !== null
+            ? ` · Free over ${formatDeliveryFee(delivery.free_over_cents)}`
+            : ""}
         </p>
         <button
           type="button"

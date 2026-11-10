@@ -1,17 +1,35 @@
+import type { PublicDeliveryCheck } from "@zayn/shared";
 import { formatCents } from "@/lib/money";
 
 const ZIP_COOKIE = "zf-zip";
 
-export type DeliveryResult = {
-  available: boolean;
-  fee_cents: number | null;
-  free_over_cents: number | null;
-};
+export type DeliveryResult = PublicDeliveryCheck;
 
 export type DeliveryOutcome = {
   result: DeliveryResult | null;
   error: string;
 };
+
+function isDeliveryResult(value: unknown): value is DeliveryResult {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.available === "boolean" &&
+    typeof candidate.subtotal_cents === "number" &&
+    (candidate.fee_cents === null ||
+      typeof candidate.fee_cents === "number") &&
+    typeof candidate.is_free === "boolean" &&
+    (candidate.free_over_cents === null ||
+      typeof candidate.free_over_cents === "number") &&
+    (candidate.amount_to_free_cents === null ||
+      typeof candidate.amount_to_free_cents === "number") &&
+    (candidate.zone === null || typeof candidate.zone === "object")
+  );
+}
 
 export function readZipCookie(): string | null {
   try {
@@ -43,12 +61,20 @@ export function formatDeliveryFee(cents: number): string {
   return formatCents(cents).replace(/\.00$/, "");
 }
 
-export async function requestDelivery(zip: string): Promise<DeliveryOutcome> {
+export async function requestDelivery(
+  zip: string,
+  subtotalCents?: number,
+): Promise<DeliveryOutcome> {
   try {
     const response = await fetch("/api/zip-check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ zip }),
+      body: JSON.stringify({
+        zip,
+        ...(subtotalCents !== undefined
+          ? { subtotal_cents: subtotalCents }
+          : {}),
+      }),
     });
 
     if (!response.ok) {
@@ -63,31 +89,14 @@ export async function requestDelivery(zip: string): Promise<DeliveryOutcome> {
 
     const data: unknown = await response.json().catch(() => null);
 
-    if (typeof data !== "object" || data === null) {
+    if (!isDeliveryResult(data)) {
       return {
         result: null,
         error: "We couldn't check that ZIP. Please try again.",
       };
     }
 
-    const record = data as {
-      available?: unknown;
-      fee_cents?: unknown;
-      free_over_cents?: unknown;
-    };
-
-    return {
-      result: {
-        available: record.available === true,
-        fee_cents:
-          typeof record.fee_cents === "number" ? record.fee_cents : null,
-        free_over_cents:
-          typeof record.free_over_cents === "number"
-            ? record.free_over_cents
-            : null,
-      },
-      error: "",
-    };
+    return { result: data, error: "" };
   } catch {
     return {
       result: null,

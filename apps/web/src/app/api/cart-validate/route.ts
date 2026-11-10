@@ -3,8 +3,14 @@ import {
   validateCart,
   type CartValidateItem,
 } from "@/lib/publicApi";
+import {
+  createInMemoryRateLimiter,
+  getVisitorIp,
+} from "@/lib/requestGuards";
 
 const MAX_CART_ITEMS = 50;
+const ZIP_PATTERN = /^\d{5}$/;
+const limiter = createInMemoryRateLimiter(60);
 
 function parseItems(value: unknown): CartValidateItem[] | null {
   if (!Array.isArray(value) || value.length > MAX_CART_ITEMS) {
@@ -45,8 +51,26 @@ function parseItems(value: unknown): CartValidateItem[] | null {
 /**
  * Server-side proxy for cart validation. The STOREFRONT_API_KEY secret stays
  * on the server and the browser only ever sees current product pricing.
+ *
+ * The in-memory limiter is per server instance; the API limiter is the
+ * durable backstop keyed to the forwarded visitor IP.
  */
 export async function POST(request: Request) {
+  const visitorIp = getVisitorIp(request);
+  const decision = limiter.check(visitorIp ?? "unknown");
+
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again shortly." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(decision.retryAfterSeconds),
+        },
+      },
+    );
+  }
+
   const body: unknown = await request.json().catch(() => null);
 
   if (typeof body !== "object" || body === null) {
@@ -56,16 +80,21 @@ export async function POST(request: Request) {
     );
   }
 
-  const items = parseItems((body as { items?: unknown }).items);
+  const record = body as { items?: unknown; zip?: unknown };
+  const items = parseItems(record.items);
+  const zip =
+    typeof record.zip === "string" && ZIP_PATTERN.test(record.zip.trim())
+      ? record.zip.trim()
+      : undefined;
 
-  if (!items) {
+  if (!items || (record.zip !== undefined && !zip)) {
     return NextResponse.json(
       { error: "Invalid cart payload." },
       { status: 400 },
     );
   }
 
-  const result = await validateCart(items);
+  const result = await validateCart(items, zip, visitorIp);
 
   if (!result.ok) {
     const clientError = result.error === "HTTP 400";

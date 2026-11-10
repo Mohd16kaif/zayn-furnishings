@@ -590,7 +590,9 @@ export function Navbar({
   const visibleEntries = navEntries.slice(0, shownCount);
   const overflowEntries = navEntries.slice(shownCount);
 
-  const thresholdText = formatCents(settings.free_delivery_threshold_cents);
+  const thresholdCents = settings.free_delivery_threshold_cents;
+  const thresholdText =
+    thresholdCents !== null ? formatCents(thresholdCents) : null;
   const phoneHref = settings.phone
     ? `tel:${settings.phone.replace(/[^\d+]/g, "")}`
     : null;

@@ -18,23 +18,26 @@ import {
 function deliveryMessage(
   zip: string,
   result: DeliveryResult,
-  priceCents: number,
 ): string {
   if (!result.available) {
     return `We don't deliver to ${zip} yet.`;
   }
 
-  const qualifiesForFreeDelivery =
-    result.fee_cents === 0 ||
-    (result.free_over_cents !== null &&
-      priceCents >= result.free_over_cents);
-
-  if (qualifiesForFreeDelivery) {
+  if (result.is_free) {
     return `Delivering to ${zip}: Free delivery`;
   }
 
   if (result.fee_cents !== null) {
-    return `Delivering to ${zip}: ${formatDeliveryFee(result.fee_cents)} delivery`;
+    const fee = `Delivering to ${zip}: ${formatDeliveryFee(result.fee_cents)} delivery`;
+
+    if (
+      !result.is_free &&
+      result.free_over_cents !== null
+    ) {
+      return `${fee} · Free over ${formatDeliveryFee(result.free_over_cents)}`;
+    }
+
+    return fee;
   }
 
   return `Delivering to ${zip}: delivery available`;
@@ -61,7 +64,7 @@ export function DeliveryPanel({ priceCents }: { priceCents: number }) {
     let cancelled = false;
 
     void (async () => {
-      const outcome = await requestDelivery(savedZip);
+      const outcome = await requestDelivery(savedZip, priceCents);
 
       if (cancelled) {
         return;
@@ -76,7 +79,7 @@ export function DeliveryPanel({ priceCents }: { priceCents: number }) {
     return () => {
       cancelled = true;
     };
-  }, [savedZip]);
+  }, [savedZip, priceCents]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,7 +94,7 @@ export function DeliveryPanel({ priceCents }: { priceCents: number }) {
     setError("");
     setEditing(false);
 
-    const outcome = await requestDelivery(next);
+    const outcome = await requestDelivery(next, priceCents);
 
     setResult(outcome.result);
     setError(outcome.error);
@@ -119,7 +122,7 @@ export function DeliveryPanel({ priceCents }: { priceCents: number }) {
       ) : showResult && activeZip && result ? (
         <div className="zf-delivery__result">
           <p className="zf-delivery__message">
-            {deliveryMessage(activeZip, result, priceCents)}
+            {deliveryMessage(activeZip, result)}
           </p>
           <button
             type="button"

@@ -15,7 +15,7 @@ export interface PublicStoreSettings {
   store_name: string;
   phone: string;
   email: string;
-  free_delivery_threshold_cents: number;
+  free_delivery_threshold_cents: number | null;
   show_financing: boolean;
 }
 
@@ -93,8 +93,20 @@ export interface PublicProductDetail {
   related_products: PublicProductCard[];
 }
 
+export interface PublicDeliveryZone {
+  name: string;
+  zip_start: string;
+  zip_end: string;
+  fee_cents: number;
+  free_over_cents: number | null;
+}
+
 export interface PublicDeliveryCheck {
   available: boolean;
+  zone: PublicDeliveryZone | null;
+  subtotal_cents: number;
   fee_cents: number | null;
+  is_free: boolean;
   free_over_cents: number | null;
+  amount_to_free_cents: number | null;
 }

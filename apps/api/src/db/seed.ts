@@ -182,7 +182,7 @@ const deliveryZoneRows = [
     zipStart: "00000",
     zipEnd: "99999",
     feeCents: 9900,
-    freeOverCents: 150000,
+    freeOverCents: null,
     isActive: true,
   },
   {
@@ -190,7 +190,7 @@ const deliveryZoneRows = [
     zipStart: "10000",
     zipEnd: "19999",
     feeCents: 14900,
-    freeOverCents: 250000,
+    freeOverCents: null,
     isActive: true,
   },
   {
@@ -198,7 +198,7 @@ const deliveryZoneRows = [
     zipStart: "90000",
     zipEnd: "99999",
     feeCents: 19900,
-    freeOverCents: 300000,
+    freeOverCents: null,
     isActive: true,
   },
 ];
@@ -293,30 +293,7 @@ async function seed() {
     await database.insert(deliveryZones).values(zonesToInsert);
   }
 
-  const announcementTitle = "Free delivery on orders over $1,500";
-  const existingAnnouncement = await database
-    .select({ id: contentBlocks.id })
-    .from(contentBlocks)
-    .where(
-      and(
-        eq(contentBlocks.type, "announcement"),
-        eq(contentBlocks.title, announcementTitle),
-      ),
-    )
-    .limit(1);
-
-  if (existingAnnouncement.length === 0) {
-    await database.insert(contentBlocks).values({
-      type: "announcement",
-      title: announcementTitle,
-      subtitle: "SAMPLE - replace with your launch announcement",
-      body: "SAMPLE announcement content block.",
-      buttonText: "Shop now",
-      linkUrl: "/collections/all",
-      sortOrder: 0,
-      isActive: true,
-    });
-  }
+  // Announcement copy is owner-managed in /admin; no launch text is seeded.
 
   // TODO(before launch): confirm these claims with the client before go-live:
   //  - warranty length (referenced in the materials/FAQ answers below)

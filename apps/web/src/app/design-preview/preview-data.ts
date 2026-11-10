@@ -153,7 +153,7 @@ export const faqs = [
   {
     question: "How does white-glove delivery work?",
     answer:
-      "Our delivery partners bring each piece into your room of choice, place it where you would like, and remove all packaging. Complimentary white-glove delivery applies to orders over $1,999 within the contiguous United States.",
+      "Our delivery partners bring each piece into your room of choice, place it where you would like, and remove all packaging. Complimentary white-glove delivery applies to qualifying orders within the contiguous United States.",
   },
   {
     question: "What is your return policy?",

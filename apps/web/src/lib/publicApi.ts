@@ -14,7 +14,7 @@ import type {
  * Every helper:
  * - fetches GET <NEXT_PUBLIC_API_URL>/api/public/... with `revalidate: 60`
  * - sends `x-storefront-key` (from the non-public STOREFRONT_API_KEY secret)
- *   so the storefront skips the per-IP rate limit
+ *   and, for visitor-triggered routes, the forwarded `x-visitor-ip`
  * - NEVER throws: a down API returns a typed safe fallback so a page can
  *   render an empty menu / friendly notice instead of failing.
  */
@@ -26,7 +26,7 @@ export const DEFAULT_STORE_SETTINGS: PublicStoreSettings = {
   store_name: "Zayn Furnishings",
   phone: "",
   email: "",
-  free_delivery_threshold_cents: 199900,
+  free_delivery_threshold_cents: null,
   show_financing: false,
 };
 
@@ -64,16 +64,19 @@ const EMPTY_PRODUCT_DETAIL: PublicProductDetail = {
 
 const EMPTY_DELIVERY_CHECK: PublicDeliveryCheck = {
   available: false,
+  zone: null,
+  subtotal_cents: 0,
   fee_cents: null,
+  is_free: false,
   free_over_cents: null,
+  amount_to_free_cents: null,
 };
 
 const EMPTY_CART_VALIDATION: CartValidation = {
   items: [],
   unavailable: [],
   subtotal_cents: 0,
-  free_delivery_threshold_cents:
-    DEFAULT_STORE_SETTINGS.free_delivery_threshold_cents,
+  delivery: null,
 };
 
 export type SearchSuggestProduct = {
@@ -121,7 +124,7 @@ export type CartValidation = {
   items: CartValidatedItem[];
   unavailable: string[];
   subtotal_cents: number;
-  free_delivery_threshold_cents: number;
+  delivery: PublicDeliveryCheck | null;
 };
 
 export type ApiResult<T> = {
@@ -134,12 +137,18 @@ function apiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
 }
 
-function requestHeaders(): Record<string, string> {
+function requestHeaders(
+  visitorIp?: string | null,
+): Record<string, string> {
   const headers: Record<string, string> = {};
   const key = process.env.STOREFRONT_API_KEY;
 
   if (key) {
     headers["x-storefront-key"] = key;
+  }
+
+  if (visitorIp) {
+    headers["x-visitor-ip"] = visitorIp;
   }
 
   return headers;
@@ -156,7 +165,8 @@ function isValidSettings(value: unknown): value is PublicStoreSettings {
     typeof candidate.store_name === "string" &&
     typeof candidate.phone === "string" &&
     typeof candidate.email === "string" &&
-    typeof candidate.free_delivery_threshold_cents === "number" &&
+    (candidate.free_delivery_threshold_cents === null ||
+      typeof candidate.free_delivery_threshold_cents === "number") &&
     typeof candidate.show_financing === "boolean"
   );
 }
@@ -166,12 +176,13 @@ async function safeGet<T>(
   fallback: T,
   validate: (value: unknown) => boolean,
   revalidateSeconds = REVALIDATE_SECONDS,
+  visitorIp?: string | null,
 ): Promise<ApiResult<T>> {
   const url = `${apiUrl()}/api/public${path}`;
 
   try {
     const response = await fetch(url, {
-      headers: requestHeaders(),
+      headers: requestHeaders(visitorIp),
       next: { revalidate: revalidateSeconds },
     });
 
@@ -228,6 +239,27 @@ function isProductDetail(value: unknown): value is PublicProductDetail {
   return typeof value === "object" && value !== null && value !== undefined;
 }
 
+function isDeliveryCheck(value: unknown): value is PublicDeliveryCheck {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.available === "boolean" &&
+    typeof candidate.subtotal_cents === "number" &&
+    (candidate.fee_cents === null ||
+      typeof candidate.fee_cents === "number") &&
+    typeof candidate.is_free === "boolean" &&
+    (candidate.free_over_cents === null ||
+      typeof candidate.free_over_cents === "number") &&
+    (candidate.amount_to_free_cents === null ||
+      typeof candidate.amount_to_free_cents === "number") &&
+    (candidate.zone === null || typeof candidate.zone === "object")
+  );
+}
+
 function isCartValidation(value: unknown): value is CartValidation {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -239,7 +271,8 @@ function isCartValidation(value: unknown): value is CartValidation {
     Array.isArray(candidate.items) &&
     Array.isArray(candidate.unavailable) &&
     typeof candidate.subtotal_cents === "number" &&
-    typeof candidate.free_delivery_threshold_cents === "number"
+    (candidate.delivery === null ||
+      isDeliveryCheck(candidate.delivery))
   );
 }
 
@@ -345,6 +378,7 @@ export function getProduct(
 
 export function getSearchSuggestions(
   query: string,
+  visitorIp?: string | null,
 ): Promise<ApiResult<SearchSuggestions>> {
   const search = new URLSearchParams({ q: query });
 
@@ -353,12 +387,15 @@ export function getSearchSuggestions(
     EMPTY_SEARCH_SUGGESTIONS,
     isSearchSuggestions,
     30,
+    visitorIp,
   );
 }
 
 /** Live cart validation (no caching) — prices must always come from the API. */
 export async function validateCart(
   items: CartValidateItem[],
+  zip?: string,
+  visitorIp?: string | null,
 ): Promise<ApiResult<CartValidation>> {
   const url = `${apiUrl()}/api/public/cart/validate`;
 
@@ -366,10 +403,13 @@ export async function validateCart(
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        ...requestHeaders(),
+        ...requestHeaders(visitorIp),
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({
+        items,
+        ...(zip ? { zip } : {}),
+      }),
       cache: "no-store",
     });
 
@@ -404,12 +444,20 @@ export async function validateCart(
 /** Live check (no caching) — used by the /api/zip-check route handler. */
 export async function checkDelivery(
   zip: string,
+  subtotalCents?: number,
+  visitorIp?: string | null,
 ): Promise<ApiResult<PublicDeliveryCheck>> {
-  const url = `${apiUrl()}/api/public/delivery/check?zip=${encodeURIComponent(zip)}`;
+  const search = new URLSearchParams({ zip });
+
+  if (subtotalCents !== undefined) {
+    search.set("subtotal_cents", String(subtotalCents));
+  }
+
+  const url = `${apiUrl()}/api/public/delivery/check?${search.toString()}`;
 
   try {
     const response = await fetch(url, {
-      headers: requestHeaders(),
+      headers: requestHeaders(visitorIp),
       cache: "no-store",
     });
 
@@ -419,7 +467,7 @@ export async function checkDelivery(
 
     const parsed: unknown = await response.json();
 
-    if (typeof parsed !== "object" || parsed === null) {
+    if (!isDeliveryCheck(parsed)) {
       return {
         ok: false,
         data: EMPTY_DELIVERY_CHECK,
@@ -427,17 +475,7 @@ export async function checkDelivery(
       };
     }
 
-    const value = parsed as Record<string, unknown>;
-
-    return {
-      ok: true,
-      data: {
-        available: value.available === true,
-        fee_cents: typeof value.fee_cents === "number" ? value.fee_cents : null,
-        free_over_cents:
-          typeof value.free_over_cents === "number" ? value.free_over_cents : null,
-      } satisfies PublicDeliveryCheck,
-    };
+    return { ok: true, data: parsed };
   } catch (error) {
     return {
       ok: false,

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import {
   and,
   asc,
@@ -19,7 +20,8 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+import { computeDelivery, type PublicDeliveryCheck } from "@zayn/shared";
 import { z } from "zod";
 import { env } from "../config/env";
 import { db } from "../db/client";
@@ -35,6 +37,9 @@ import {
 import { sendError, sendValidationError } from "../lib/adminCatalog";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
+const PUBLIC_RATE_LIMIT = 120;
+const STOREFRONT_RATE_LIMIT = 300;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
 function storefrontKeyMatches(req: Request): boolean {
   const provided = req.get("x-storefront-key");
@@ -54,12 +59,33 @@ function storefrontKeyMatches(req: Request): boolean {
   return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
+function trustedVisitorIp(req: Request): string | null {
+  if (!storefrontKeyMatches(req)) {
+    return null;
+  }
+
+  const visitorIp = req.get("x-visitor-ip")?.trim();
+
+  return visitorIp && isIP(visitorIp) ? visitorIp : null;
+}
+
 const publicRateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 120,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: (req: Request) =>
+    storefrontKeyMatches(req)
+      ? STOREFRONT_RATE_LIMIT
+      : PUBLIC_RATE_LIMIT,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  skip: (req: Request) => storefrontKeyMatches(req),
+  keyGenerator: (req: Request) => {
+    const visitorIp = trustedVisitorIp(req);
+
+    if (visitorIp) {
+      return `storefront:${ipKeyGenerator(visitorIp)}`;
+    }
+
+    return ipKeyGenerator(req.ip ?? "");
+  },
   message: { error: "Too many requests. Please try again in a minute." },
 });
 
@@ -69,15 +95,6 @@ function cacheGet(
   next: NextFunction,
 ): void {
   res.set("Cache-Control", PUBLIC_CACHE_CONTROL);
-  next();
-}
-
-function cacheGetShort(
-  _req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
-  res.set("Cache-Control", "public, max-age=30");
   next();
 }
 
@@ -207,6 +224,11 @@ const deliveryQuerySchema = z.object({
     .string()
     .trim()
     .regex(/^\d{5}$/, "Enter a 5-digit US ZIP code."),
+  subtotal_cents: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
 });
 
 const cartValidateSchema = z.object({
@@ -218,13 +240,18 @@ const cartValidateSchema = z.object({
       }),
     )
     .max(50),
+  zip: z
+    .string()
+    .trim()
+    .regex(/^\d{5}$/, "Enter a 5-digit US ZIP code.")
+    .optional(),
 });
 
 const DEFAULT_STORE_SETTINGS = {
   store_name: "Zayn Furnishings",
   phone: "",
   email: "",
-  free_delivery_threshold_cents: 199900,
+  free_delivery_threshold_cents: null,
   show_financing: false,
 } as const;
 
@@ -247,20 +274,110 @@ function coerceSettingValue(key: string, value: unknown): unknown | undefined {
   }
 }
 
-async function readFreeDeliveryThreshold(): Promise<number> {
+async function readFreeDeliveryThreshold(): Promise<number | null> {
   const rows = await db!.select().from(storeSettings);
-  let threshold: number =
-    DEFAULT_STORE_SETTINGS.free_delivery_threshold_cents;
 
   for (const row of rows) {
+    if (row.key !== "free_delivery_threshold_cents") {
+      continue;
+    }
+
     const value = coerceSettingValue(row.key, row.value);
 
-    if (row.key === "free_delivery_threshold_cents" && typeof value === "number") {
-      threshold = value;
+    if (typeof value === "number") {
+      return value;
     }
   }
 
-  return threshold;
+  return null;
+}
+
+type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
+
+async function findBestDeliveryZone(
+  zip: string,
+): Promise<DeliveryZoneRow | null> {
+  const zones = await db!
+    .select()
+    .from(deliveryZones)
+    .where(
+      and(
+        eq(deliveryZones.isActive, true),
+        lte(deliveryZones.zipStart, zip),
+        gte(deliveryZones.zipEnd, zip),
+      ),
+    );
+
+  if (zones.length === 0) {
+    return null;
+  }
+
+  return zones.reduce((current, zone) => {
+    const currentSpan =
+      Number(current.zipEnd) - Number(current.zipStart);
+    const zoneSpan = Number(zone.zipEnd) - Number(zone.zipStart);
+    return zoneSpan < currentSpan ? zone : current;
+  });
+}
+
+function serializeDeliveryZone(zone: DeliveryZoneRow) {
+  return {
+    name: zone.name,
+    zip_start: zone.zipStart,
+    zip_end: zone.zipEnd,
+    fee_cents: zone.feeCents,
+    free_over_cents: zone.freeOverCents,
+  };
+}
+
+async function computeDeliveryCheck(
+  zip: string,
+  subtotalCents: number,
+): Promise<PublicDeliveryCheck> {
+  const zone = await findBestDeliveryZone(zip);
+
+  if (!zone) {
+    return {
+      available: false,
+      zone: null,
+      subtotal_cents: subtotalCents,
+      fee_cents: null,
+      is_free: false,
+      free_over_cents: null,
+      amount_to_free_cents: null,
+    };
+  }
+
+  const settingsThresholdCents = await readFreeDeliveryThreshold();
+  const computed = computeDelivery({
+    zone: {
+      feeCents: zone.feeCents,
+      freeOverCents: zone.freeOverCents,
+    },
+    settingsThresholdCents,
+    subtotalCents,
+  });
+
+  return {
+    available: true,
+    zone: serializeDeliveryZone(zone),
+    subtotal_cents: subtotalCents,
+    fee_cents: computed.feeCents,
+    is_free: computed.isFree,
+    free_over_cents: computed.freeOverCents,
+    amount_to_free_cents: computed.amountToFreeCents,
+  };
+}
+
+async function deliveryForOptionalZip(
+  zip: string | undefined,
+  subtotalCents: number,
+): Promise<PublicDeliveryCheck | null> {
+  if (!zip) {
+    return null;
+  }
+
+  return computeDeliveryCheck(zip, subtotalCents);
 }
 
 export const publicRouter = Router();
@@ -377,7 +494,6 @@ publicRouter.get(
 
 publicRouter.get(
   "/search/suggest",
-  cacheGetShort,
   async (req: Request, res: Response) => {
     const parsed = suggestQuerySchema.safeParse(req.query);
 
@@ -424,6 +540,7 @@ publicRouter.get(
         .orderBy(asc(categories.name))
         .limit(4);
 
+      res.set("Cache-Control", "public, max-age=30");
       res.json({
         products: productRows.map((row) => ({
           name: row.product.name,
@@ -817,7 +934,7 @@ publicRouter.post(
           items: [],
           unavailable: [],
           subtotal_cents: 0,
-          free_delivery_threshold_cents: await readFreeDeliveryThreshold(),
+          delivery: await deliveryForOptionalZip(parsed.data.zip, 0),
         });
         return;
       }
@@ -876,13 +993,16 @@ publicRouter.post(
         }
       }
 
-      const freeDeliveryThresholdCents = await readFreeDeliveryThreshold();
+      const delivery = await deliveryForOptionalZip(
+        parsed.data.zip,
+        subtotalCents,
+      );
 
       res.json({
         items,
         unavailable,
         subtotal_cents: subtotalCents,
-        free_delivery_threshold_cents: freeDeliveryThresholdCents,
+        delivery,
       });
     } catch (error) {
       sendError(res, error, "Failed to validate cart");
@@ -997,40 +1117,13 @@ publicRouter.get(
     }
 
     try {
-      const zip = parsed.data.zip;
+      const subtotalCents = parsed.data.subtotal_cents ?? 0;
+      const delivery = await computeDeliveryCheck(
+        parsed.data.zip,
+        subtotalCents,
+      );
 
-      const zones = await db!
-        .select()
-        .from(deliveryZones)
-        .where(
-          and(
-            eq(deliveryZones.isActive, true),
-            lte(deliveryZones.zipStart, zip),
-            gte(deliveryZones.zipEnd, zip),
-          ),
-        );
-
-      if (zones.length === 0) {
-        res.json({
-          available: false,
-          fee_cents: null,
-          free_over_cents: null,
-        });
-        return;
-      }
-
-      const best = zones.reduce((current, zone) => {
-        const currentSpan =
-          Number(current.zipEnd) - Number(current.zipStart);
-        const zoneSpan = Number(zone.zipEnd) - Number(zone.zipStart);
-        return zoneSpan < currentSpan ? zone : current;
-      });
-
-      res.json({
-        available: true,
-        fee_cents: best.feeCents,
-        free_over_cents: best.freeOverCents,
-      });
+      res.json(delivery);
     } catch (error) {
       sendError(res, error, "Failed to check delivery availability");
     }

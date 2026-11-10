@@ -27,7 +27,7 @@ const iconComponents: Record<
 const PREVIEW_ITEMS: TrustItem[] = [
   {
     title: "Free delivery",
-    copy: "White-glove on orders over $1,999",
+    copy: "White-glove delivery available",
     icon: "truck",
   },
   {

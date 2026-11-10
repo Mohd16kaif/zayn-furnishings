@@ -1,4 +1,5 @@
 export * from "./public";
+export * from "./delivery";
 
 export const API_NAME = "zayn-furnishings-api";
 

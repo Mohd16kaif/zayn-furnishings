@@ -45,7 +45,7 @@ function toneFor(index: number): (typeof TONES)[number] {
   return TONES[index % TONES.length];
 }
 
-/** Whole-dollar display for the free-delivery threshold ("$1,999"). */
+/** Whole-dollar display for the free-delivery threshold. */
 function formatThreshold(cents: number): string {
   return formatCents(cents).replace(/\.00$/, "");
 }
@@ -135,12 +135,18 @@ export default async function HomePage() {
       buttonLink: block.link_url,
     }));
 
+  const freeDeliveryThresholdCents =
+    settings.free_delivery_threshold_cents;
+
   const trustItems: TrustItem[] = [
     {
       title: "Delivery",
-      copy: `Free delivery over ${formatThreshold(
-        settings.free_delivery_threshold_cents,
-      )}`,
+      copy:
+        freeDeliveryThresholdCents !== null
+          ? `Free delivery over ${formatThreshold(
+              freeDeliveryThresholdCents,
+            )}`
+          : "Delivery calculated at checkout",
       icon: "truck",
     },
     {
