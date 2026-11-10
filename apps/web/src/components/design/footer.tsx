@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { PublicCategoryNode, PublicStoreSettings } from "@zayn/shared";
 import { ArrowRightIcon } from "./icons";
 
@@ -12,10 +12,19 @@ type FooterProps = {
 
 type FooterLink = { label: string; href: string };
 
-// Read once at module evaluation. Calling `new Date()` during render makes
-// Next.js treat the client component as browser-only and bail out of the
-// static prerender.
-const CURRENT_YEAR = new Date().getFullYear();
+function FooterYear() {
+  const [year, setYear] = useState<number | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setYear(new Date().getFullYear());
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return <>{year}</>;
+}
 
 function companyLinks(): FooterLink[] {
   return [
@@ -165,7 +174,7 @@ export function Footer({ categories, settings }: FooterProps) {
 
         <div className="zf-footer__bottom">
           <p className="zf-footer__legal">
-            &copy; {CURRENT_YEAR} {settings.store_name}.
+            &copy; <FooterYear /> {settings.store_name}.
           </p>
         </div>
       </div>
