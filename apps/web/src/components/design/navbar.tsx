@@ -106,6 +106,7 @@ export function Navbar({
 
   const triggerRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const hoverTimerRef = useRef<number | null>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const categoriesRowRef = useRef<HTMLDivElement>(null);
   const navBarRef = useRef<HTMLDivElement>(null);
   const navRowRef = useRef<HTMLUListElement>(null);
@@ -252,6 +253,53 @@ export function Navbar({
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const header = headerRef.current;
+
+    if (!header) {
+      return;
+    }
+
+    const announcement =
+      document.querySelector<HTMLElement>(".zf-announce");
+
+    const updateHeaderHeight = () => {
+      let extra = 0;
+
+      if (announcement) {
+        const position = window.getComputedStyle(announcement).position;
+
+        if (position === "fixed" || position === "sticky") {
+          extra = announcement.getBoundingClientRect().height;
+        }
+      }
+
+      const height = Math.round(
+        header.getBoundingClientRect().height + extra,
+      );
+
+      document.documentElement.style.setProperty(
+        "--zf-header-height",
+        `${height}px`,
+      );
+    };
+
+    const observer = new ResizeObserver(updateHeaderHeight);
+    observer.observe(header);
+
+    if (announcement) {
+      observer.observe(announcement);
+    }
+
+    updateHeaderHeight();
+    window.addEventListener("resize", updateHeaderHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateHeaderHeight);
+    };
   }, []);
 
   useEffect(
@@ -549,7 +597,10 @@ export function Navbar({
 
   return (
     <>
-      <header className={`zf-nav${scrolled ? " zf-nav--scrolled" : ""}`}>
+      <header
+        ref={headerRef}
+        className={`zf-nav${scrolled ? " zf-nav--scrolled" : ""}`}
+      >
         <div className="zf-nav__utility">
           <div className="zf-container zf-nav__utility-inner">
             <div className="zf-nav__contact">
@@ -995,7 +1046,7 @@ export function Navbar({
                         href="/new"
                         onClick={() => closeDrawer(false)}
                       >
-                        New Arrivals
+                        <span>New Arrivals</span>
                         <ArrowRightIcon className="zf-drawer__row-icon" />
                       </Link>
                     </li>
@@ -1008,7 +1059,7 @@ export function Navbar({
                         href="/sale"
                         onClick={() => closeDrawer(false)}
                       >
-                        Sale
+                        <span>Sale</span>
                         <ArrowRightIcon className="zf-drawer__row-icon" />
                       </Link>
                     </li>

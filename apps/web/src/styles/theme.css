@@ -2,8 +2,10 @@
    Scoped to .zf so the admin and the rest of the app are untouched. */
 
 html:has(.zf) {
+  --zf-header-height: 0px;
   background: #ffffff;
   scroll-behavior: smooth;
+  scroll-padding-top: var(--zf-header-height);
 }
 
 html[data-zf-theme="dark"] {
@@ -169,6 +171,10 @@ html[data-zf-theme="dark"] .zf {
   max-width: 1320px;
   margin-inline: auto;
   padding-inline: 24px;
+}
+
+.zf #main {
+  padding-top: var(--zf-header-height);
 }
 
 .zf-section {
@@ -1145,7 +1151,8 @@ html[data-zf-theme="dark"] .zf {
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  padding: 26px 26px 40px;
+  max-height: 100dvh;
+  padding: calc(10px + env(safe-area-inset-top)) 0 0;
   background: var(--bg);
   border-left: 1px solid var(--line);
   transform: translateX(100%);
@@ -1171,7 +1178,9 @@ html[data-zf-theme="dark"] .zf {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 42px;
+  margin-bottom: 10px;
+  padding: 0 max(20px, env(safe-area-inset-right)) 0
+    max(20px, env(safe-area-inset-left));
 }
 
 .zf-drawer__links {
@@ -1220,19 +1229,11 @@ html[data-zf-theme="dark"] .zf {
 
 .zf-drawer__links a,
 .zf-drawer__links button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
   width: 100%;
-  padding: 18px 0;
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  font-family: var(--font-serif);
-  font-size: 28px;
-  line-height: 1;
   text-align: left;
 }
 
@@ -1242,20 +1243,31 @@ html[data-zf-theme="dark"] .zf {
 
 .zf-drawer__utility {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 24px;
-  padding-top: 18px;
+  gap: 10px 16px;
+  margin-top: 12px;
+  padding: 12px max(20px, env(safe-area-inset-right)) 0
+    max(20px, env(safe-area-inset-left));
   border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.zf-drawer__utility .zf-zip__trigger {
+  font-size: 13px;
 }
 
 .zf-drawer__footer {
   margin-top: auto;
-  padding-top: 36px;
+  padding: 14px max(20px, env(safe-area-inset-right))
+    calc(14px + env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
   color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* Drawer drill-down views */
@@ -1307,28 +1319,34 @@ html[data-zf-theme="dark"] .zf {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .zf-drawer__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
-  padding: 18px 0;
+  height: 52px;
+  padding: 0 max(20px, env(safe-area-inset-right)) 0
+    max(20px, env(safe-area-inset-left));
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
   font-family: var(--font-serif);
-  font-size: 28px;
-  line-height: 1;
+  font-size: clamp(17px, 4.8vw, 21px);
+  line-height: 1.15;
   text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .zf-drawer__row span {
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .zf-drawer__chevron {
@@ -1360,7 +1378,8 @@ html[data-zf-theme="dark"] .zf {
   flex-wrap: wrap;
   gap: 8px 20px;
   margin: 18px 0 0;
-  padding: 18px 0 0;
+  padding: 18px max(20px, env(safe-area-inset-right)) 0
+    max(20px, env(safe-area-inset-left));
   border-top: 1px solid var(--line);
   list-style: none;
 }
@@ -1380,8 +1399,10 @@ html[data-zf-theme="dark"] .zf {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding-bottom: 16px;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 max(20px, env(safe-area-inset-right)) 10px
+    max(20px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--line);
 }
 
@@ -1401,7 +1422,8 @@ html[data-zf-theme="dark"] .zf {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .zf-drawer__detail-links {
@@ -1416,27 +1438,29 @@ html[data-zf-theme="dark"] .zf {
 }
 
 .zf-drawer__detail-links a {
-  display: block;
-  padding: 15px 0;
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 max(20px, env(safe-area-inset-right)) 0
+    max(20px, env(safe-area-inset-left));
   color: var(--muted);
-  font-size: 13px;
-  letter-spacing: 0.04em;
+  font-family: var(--font-serif);
+  font-size: clamp(17px, 4.8vw, 21px);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
   transition:
     color 180ms ease,
-    padding-left 180ms ease;
+    background-color 180ms ease;
 }
 
 .zf-drawer__detail-links a:hover {
   color: var(--ink);
-  padding-left: 6px;
+  background: var(--bg-soft);
 }
 
 .zf-drawer__detail-links li:first-child a {
   color: var(--brand);
-  font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
 }
 
 /* ---------- Hero ---------- */
@@ -1446,6 +1470,7 @@ html[data-zf-theme="dark"] .zf {
   display: flex;
   align-items: flex-end;
   min-height: 92vh;
+  margin-top: calc(-1 * var(--zf-header-height));
   overflow: hidden;
   background: #2b1a0f;
   color: #fbf6ed;
@@ -3421,8 +3446,9 @@ a.zf-product {
 }
 
 .zf-catalog__title {
-  font-size: clamp(2rem, 4.6vw, 3.4rem);
+  font-size: clamp(28px, 8vw, 44px);
   line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
 .zf-catalog__count {
@@ -4041,6 +4067,35 @@ html[data-zf-theme="dark"] .zf-skeleton::after {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .zf-breadcrumb ol {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+
+  .zf-product__body {
+    padding: 14px 14px 18px;
+  }
+
+  .zf-product__name {
+    font-size: 15px;
+  }
+
+  .zf-product__meta {
+    font-size: 9px;
+  }
+
+  .zf-product__price {
+    font-size: 15px;
+  }
+
+  .zf-product__price s {
+    font-size: 12px;
+  }
+
+  .zf-filters-toggle {
+    font-size: 11px;
   }
 
   .zf-pagination {

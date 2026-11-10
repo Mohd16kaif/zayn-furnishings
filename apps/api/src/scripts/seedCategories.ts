@@ -133,10 +133,6 @@ const TOP_LEVEL_CATEGORIES: TopLevelSeed[] = [
 
 type CategoryRow = typeof categories.$inferSelect;
 
-function descriptionFor(name: string): string {
-  return `Pieces and essentials in the ${name} category.`;
-}
-
 function sameName(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
@@ -224,7 +220,7 @@ async function seedCategories(): Promise<void> {
           name: topLevel.name,
           slug: topLevel.slug,
           parentId: null,
-          description: descriptionFor(topLevel.name),
+          description: null,
           sortOrder: topIndex + 1,
           isActive: true,
         })
@@ -255,7 +251,7 @@ async function seedCategories(): Promise<void> {
           name: child.name,
           slug,
           parentId: parent.id,
-          description: descriptionFor(child.name),
+          description: null,
           sortOrder: childIndex + 1,
           isActive: true,
         })
