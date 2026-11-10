@@ -4,6 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 const CATEGORY_CACHE_TTL_MS = 60_000;
 const PRODUCT_CACHE_TTL_MS = 60_000;
 const MAX_PRODUCT_CACHE_ENTRIES = 500;
+// Short timeout on purpose: this runs on every page request.
+const API_TIMEOUT_MS = 2_500;
 
 let categorySlugCache: { slugs: Set<string>; expiresAt: number } | null = null;
 
@@ -51,14 +53,11 @@ async function getCategorySlugs(): Promise<Set<string> | null> {
     return categorySlugCache.slugs;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
-
   try {
     const response = await fetch(publicApiUrl("/categories"), {
       headers: storefrontHeaders(),
       cache: "no-store",
-      signal: controller.signal,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -73,8 +72,6 @@ async function getCategorySlugs(): Promise<Set<string> | null> {
     return slugs;
   } catch {
     return categorySlugCache?.slugs ?? null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -131,16 +128,13 @@ async function productExists(slug: string): Promise<boolean | null> {
     return cached.exists;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
-
   try {
     const response = await fetch(
       publicApiUrl(`/products/${encodeURIComponent(slug)}`),
       {
         headers: storefrontHeaders(),
         cache: "no-store",
-        signal: controller.signal,
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
       },
     );
 
@@ -167,8 +161,6 @@ async function productExists(slug: string): Promise<boolean | null> {
     return true;
   } catch {
     return cached?.exists ?? null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

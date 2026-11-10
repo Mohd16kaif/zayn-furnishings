@@ -21,6 +21,7 @@ import type {
 
 const DEFAULT_API_URL = "http://localhost:4000";
 const REVALIDATE_SECONDS = 60;
+const API_TIMEOUT_MS = 8_000;
 
 export const DEFAULT_STORE_SETTINGS: PublicStoreSettings = {
   store_name: "Zayn Furnishings",
@@ -184,6 +185,7 @@ async function safeGet<T>(
     const response = await fetch(url, {
       headers: requestHeaders(visitorIp),
       next: { revalidate: revalidateSeconds },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -411,6 +413,7 @@ export async function validateCart(
         ...(zip ? { zip } : {}),
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -459,6 +462,7 @@ export async function checkDelivery(
     const response = await fetch(url, {
       headers: requestHeaders(visitorIp),
       cache: "no-store",
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {

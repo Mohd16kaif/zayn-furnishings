@@ -7,6 +7,7 @@ import {
   getSettings,
 } from "@/lib/publicApi";
 import { formatCents } from "@/lib/money";
+import { availableHomeImage } from "@/lib/homeImages";
 import { Hero, type HeroSlide } from "@/components/storefront/hero";
 import { TrustStrip, type TrustItem } from "@/components/storefront/trust-strip";
 import { Rooms, type RoomTile } from "@/components/storefront/rooms";
@@ -285,7 +286,10 @@ export default async function HomePage() {
         lede={null}
       />
       {craftStats.length === 2 ? (
-        <Craft stats={craftStats} image="/images/home/craft.jpg" />
+        <Craft
+          stats={craftStats}
+          image={availableHomeImage("/images/home/craft.jpg")}
+        />
       ) : null}
       {promoCard ? <Promo card={promoCard} /> : null}
       <InfoCards cards={infoCards} />
