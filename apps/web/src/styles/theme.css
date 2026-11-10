@@ -401,6 +401,19 @@ html[data-zf-theme="dark"] .zf {
   text-transform: uppercase;
 }
 
+.zf-announce__title {
+  display: block;
+}
+
+.zf-announce__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  opacity: 0.8;
+  text-transform: none;
+}
+
 /* ---------- Scroll progress ---------- */
 
 .zf-progress {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -24,11 +24,13 @@ const navItems: Array<{ label: string; href: string; enabled: boolean }> = [
   { label: "Deliveries", href: "/admin/deliveries", enabled: false },
   { label: "Customers", href: "/admin/customers", enabled: false },
   { label: "Content", href: "/admin/content", enabled: false },
-  { label: "Settings", href: "/admin/settings", enabled: false },
+  { label: "Delivery", href: "/admin/delivery", enabled: true },
+  { label: "Settings", href: "/admin/settings", enabled: true },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [admin, setAdmin] = useState<AdminMe | null>(null);
   const [status, setStatus] = useState<"checking" | "ready" | "error">(
     "checking",
@@ -161,13 +163,22 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
 
           <nav className="mt-8 space-y-1" aria-label="Admin navigation">
-            {navItems.map((item) =>
-              item.enabled ? (
+            {navItems.map((item) => {
+              const isActive =
+                item.href === "/admin"
+                  ? pathname === "/admin"
+                  : pathname.startsWith(item.href);
+
+              return item.enabled ? (
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="flex items-center justify-between rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white"
-                  aria-current="page"
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium ${
+                    isActive
+                      ? "bg-stone-900 text-white"
+                      : "text-stone-700 hover:bg-stone-100"
+                  }`}
+                  aria-current={isActive ? "page" : undefined}
                 >
                   {item.label}
                 </Link>
@@ -182,8 +193,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     Coming soon
                   </span>
                 </span>
-              ),
-            )}
+              );
+            })}
           </nav>
         </aside>
 
@@ -211,12 +222,22 @@ export function AdminShell({ children }: { children: ReactNode }) {
               className="mb-6 flex flex-wrap gap-2 lg:hidden"
               aria-label="Admin navigation"
             >
-              {navItems.map((item) =>
-                item.enabled ? (
+              {navItems.map((item) => {
+                const isActive =
+                  item.href === "/admin"
+                    ? pathname === "/admin"
+                    : pathname.startsWith(item.href);
+
+                return item.enabled ? (
                   <Link
                     key={item.label}
                     href={item.href}
-                    className="rounded-full bg-stone-900 px-3 py-1 text-xs font-medium text-white"
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                      isActive
+                        ? "bg-stone-900 text-white"
+                        : "border border-stone-200 text-stone-700"
+                    }`}
+                    aria-current={isActive ? "page" : undefined}
                   >
                     {item.label}
                   </Link>
@@ -228,8 +249,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   >
                     {item.label}: Coming soon
                   </span>
-                ),
-              )}
+                );
+              })}
             </nav>
             {children}
           </div>

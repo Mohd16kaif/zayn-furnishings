@@ -2,6 +2,39 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+export type AdminRole = "owner" | "staff";
+
+export type AdminMe = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: AdminRole;
+};
+
+export type AdminStoreSettings = {
+  store_name: string;
+  phone: string;
+  email: string;
+  free_delivery_threshold_cents: number | null;
+  show_financing: boolean;
+};
+
+export type AdminDeliveryZone = {
+  id: string;
+  name: string;
+  zip_start: string;
+  zip_end: string;
+  fee_cents: number;
+  free_over_cents: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminDeliveryCoverage = {
+  ranges: Array<{ zip_start: string; zip_end: string }>;
+};
+
 export type AdminCategory = {
   id: string;
   name: string;

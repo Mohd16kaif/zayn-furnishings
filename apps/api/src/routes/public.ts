@@ -31,10 +31,10 @@ import {
   deliveryZones,
   productImages,
   products,
-  storeSettings,
   type Product,
 } from "../db/schema";
 import { sendError, sendValidationError } from "../lib/adminCatalog";
+import { readStoreSettings } from "../lib/storeSettings";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 const PUBLIC_RATE_LIMIT = 120;
@@ -247,49 +247,10 @@ const cartValidateSchema = z.object({
     .optional(),
 });
 
-const DEFAULT_STORE_SETTINGS = {
-  store_name: "Zayn Furnishings",
-  phone: "",
-  email: "",
-  free_delivery_threshold_cents: null,
-  show_financing: false,
-} as const;
-
-function coerceSettingValue(key: string, value: unknown): unknown | undefined {
-  switch (key) {
-    case "store_name":
-    case "phone":
-    case "email":
-      return typeof value === "string" ? value : undefined;
-    case "free_delivery_threshold_cents":
-      return typeof value === "number" &&
-        Number.isInteger(value) &&
-        value >= 0
-        ? value
-        : undefined;
-    case "show_financing":
-      return typeof value === "boolean" ? value : undefined;
-    default:
-      return undefined;
-  }
-}
-
 async function readFreeDeliveryThreshold(): Promise<number | null> {
-  const rows = await db!.select().from(storeSettings);
+  const settings = await readStoreSettings(db!);
 
-  for (const row of rows) {
-    if (row.key !== "free_delivery_threshold_cents") {
-      continue;
-    }
-
-    const value = coerceSettingValue(row.key, row.value);
-
-    if (typeof value === "number") {
-      return value;
-    }
-  }
-
-  return null;
+  return settings.free_delivery_threshold_cents;
 }
 
 type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
@@ -1085,17 +1046,8 @@ publicRouter.get(
     }
 
     try {
-      const rows = await db!.select().from(storeSettings);
-      const result: Record<string, unknown> = { ...DEFAULT_STORE_SETTINGS };
-
-      for (const row of rows) {
-        const value = coerceSettingValue(row.key, row.value);
-        if (value !== undefined) {
-          result[row.key] = value;
-        }
-      }
-
-      res.json(result);
+      const settings = await readStoreSettings(db!);
+      res.json(settings);
     } catch (error) {
       sendError(res, error, "Failed to load store settings");
     }

@@ -5,7 +5,9 @@ import { API_NAME } from "@zayn/shared";
 import { env } from "./config/env";
 import { adminAuthRouter } from "./routes/adminAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
+import { adminDeliveryZonesRouter } from "./routes/adminDeliveryZones";
 import { adminProductsRouter } from "./routes/adminProducts";
+import { adminSettingsRouter } from "./routes/adminSettings";
 import { healthRouter } from "./routes/health";
 import { publicRouter } from "./routes/public";
 
@@ -33,6 +35,8 @@ app.use(healthRouter);
 app.use("/api/public", publicRouter);
 app.use("/admin", adminAuthRouter);
 app.use("/admin", adminCategoriesRouter);
+app.use("/admin", adminSettingsRouter);
+app.use("/admin", adminDeliveryZonesRouter);
 app.use("/admin", adminProductsRouter);
 
 app.listen(env.PORT, () => {
