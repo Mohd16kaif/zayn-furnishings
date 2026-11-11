@@ -36,6 +36,13 @@
       "when": 1794205992073,
       "tag": "0004_careless_lady_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794391962877,
+      "tag": "0005_wealthy_inertia",
+      "breakpoints": true
     }
   ]
 }

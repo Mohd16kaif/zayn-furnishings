@@ -20,6 +20,7 @@ export const categories = pgTable(
       { onDelete: "set null" },
     ),
     imageUrl: text("image_url"),
+    imageStoragePath: text("image_storage_path"),
     description: text("description"),
     sortOrder: integer("sort_order").default(0).notNull(),
     isActive: boolean("is_active").default(true).notNull(),

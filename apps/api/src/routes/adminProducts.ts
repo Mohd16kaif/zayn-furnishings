@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
@@ -12,9 +11,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { Router, type NextFunction, type Request, type Response } from "express";
-import { rateLimit } from "express-rate-limit";
-import multer from "multer";
+import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -39,120 +36,32 @@ import {
   writeAudit,
   type Executor,
 } from "../lib/adminCatalog";
-import { detectImageType, processImage } from "../lib/imageProcessing";
-import { getSupabaseAdmin } from "../lib/supabase";
+import {
+  createImageUploadLimiter,
+  createImageUploadMiddleware,
+  deleteImageObjects,
+  detectImageType,
+  processImage,
+  uploadImageObject,
+} from "../lib/imagePipeline";
 import { requireAdmin } from "../middleware/requireAdmin";
 
-const PRODUCT_IMAGES_BUCKET = "product-images";
 const MAX_IMAGES_PER_PRODUCT = 10;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_FILES_PER_UPLOAD = 5;
 
-const imageUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: MAX_IMAGE_BYTES,
-    files: MAX_FILES_PER_UPLOAD,
-  },
+const imageUploadLimiter = createImageUploadLimiter(
+  "Too many photo uploads. Please wait a few minutes and try again.",
+);
+
+const uploadProductImages = createImageUploadMiddleware({
+  field: "files",
+  maxFiles: MAX_FILES_PER_UPLOAD,
+  fileSizeMessage: "Each photo must be 8 MB or smaller.",
+  countMessage:
+    'You can upload up to 5 photos at a time using the "files" field.',
+  genericMessage:
+    "The photos could not be uploaded. Please try again.",
 });
-
-const imageUploadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  keyGenerator: (req: Request) => req.admin?.id ?? "anonymous",
-  message: {
-    error: "Too many photo uploads. Please wait a few minutes and try again.",
-  },
-});
-
-function uploadProductImages(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
-  imageUpload.array("files", MAX_FILES_PER_UPLOAD)(req, res, (error) => {
-    if (!error) {
-      next();
-      return;
-    }
-
-    if (error instanceof multer.MulterError) {
-      if (error.code === "LIMIT_FILE_SIZE") {
-        res.status(413).json({
-          error: "Each photo must be 8 MB or smaller.",
-        });
-        return;
-      }
-
-      if (
-        error.code === "LIMIT_FILE_COUNT" ||
-        error.code === "LIMIT_UNEXPECTED_FILE"
-      ) {
-        res.status(400).json({
-          error:
-            'You can upload up to 5 photos at a time using the "files" field.',
-        });
-        return;
-      }
-
-      res.status(400).json({
-        error: "The photos could not be uploaded. Please try again.",
-      });
-      return;
-    }
-
-    next(error);
-  });
-}
-
-function imageStorage() {
-  return getSupabaseAdmin().storage.from(PRODUCT_IMAGES_BUCKET);
-}
-
-async function uploadImageObject(
-  productId: string,
-  buffer: Buffer,
-): Promise<{ path: string; url: string }> {
-  const path = `products/${productId}/${randomUUID()}.webp`;
-  const storage = imageStorage();
-
-  const { error } = await storage.upload(path, buffer, {
-    contentType: "image/webp",
-    cacheControl: "31536000",
-    upsert: false,
-  });
-
-  if (error) {
-    throw new HttpError(
-      500,
-      "We could not save one of the photos. Please try again.",
-    );
-  }
-
-  const { data } = storage.getPublicUrl(path);
-
-  return { path, url: data.publicUrl };
-}
-
-async function deleteImageObjects(paths: string[]): Promise<void> {
-  if (paths.length === 0) {
-    return;
-  }
-
-  try {
-    const { error } = await imageStorage().remove(paths);
-    if (error) {
-      console.error("Failed to delete product image objects:", error.message);
-    }
-  } catch (error) {
-    console.error(
-      "Failed to delete product image objects:",
-      error instanceof Error ? error.message : error,
-    );
-  }
-}
 
 const imageReorderSchema = z
   .array(
@@ -939,7 +848,7 @@ adminProductsRouter.delete(
         });
       });
 
-      await deleteImageObjects(imagePaths);
+      await deleteImageObjects(imagePaths, "product image objects");
 
       res.json({ ok: true });
     } catch (error) {
@@ -1069,7 +978,15 @@ adminProductsRouter.post(
             );
           }
 
-          uploaded.push(await uploadImageObject(product.id, processed));
+          uploaded.push(
+            await uploadImageObject({
+              folder: "products",
+              ownerId: product.id,
+              buffer: processed,
+              errorMessage:
+                "We could not save one of the photos. Please try again.",
+            }),
+          );
         }
 
         const inserted = await db.transaction(async (tx) => {
@@ -1138,7 +1055,10 @@ adminProductsRouter.post(
 
         res.status(201).json(inserted.map(serializeProductImage));
       } catch (error) {
-        await deleteImageObjects(uploaded.map((item) => item.path));
+        await deleteImageObjects(
+          uploaded.map((item) => item.path),
+          "product image objects",
+        );
         throw error;
       }
     } catch (error) {
@@ -1347,7 +1267,10 @@ adminProductsRouter.delete(
       }
 
       if (existing.storagePath) {
-        await deleteImageObjects([existing.storagePath]);
+        await deleteImageObjects(
+          [existing.storagePath],
+          "product image objects",
+        );
       }
 
       await db.delete(productImages).where(eq(productImages.id, existing.id));

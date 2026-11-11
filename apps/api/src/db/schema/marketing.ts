@@ -43,6 +43,7 @@ export const contentBlocks = pgTable(
     subtitle: text("subtitle"),
     body: text("body"),
     imageUrl: text("image_url"),
+    storagePath: text("storage_path"),
     buttonText: text("button_text"),
     linkUrl: text("link_url"),
     sortOrder: integer("sort_order").default(0).notNull(),

@@ -13,6 +13,14 @@ import {
   writeAudit,
   type Executor,
 } from "../lib/adminCatalog";
+import {
+  deleteImageObjects,
+  detectImageType,
+  processImage,
+  singleImageUpload,
+  singleImageUploadLimiter,
+  uploadImageObject,
+} from "../lib/imagePipeline";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const categoryCreateSchema = z.object({
@@ -45,6 +53,7 @@ function serializeCategory(category: Category, productCount: number) {
     slug: category.slug,
     parent_id: category.parentId,
     image_url: category.imageUrl,
+    image_storage_path: category.imageStoragePath,
     description: category.description,
     sort_order: category.sortOrder,
     is_active: category.isActive,
@@ -398,6 +407,227 @@ adminCategoriesRouter.patch(
   },
 );
 
+adminCategoriesRouter.post(
+  "/categories/:id/image",
+  singleImageUploadLimiter,
+  singleImageUpload,
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      res.status(400).json({ error: "A valid category id is required." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    const files = Array.isArray(req.files) ? req.files : [];
+    const file = files[0];
+
+    if (!file) {
+      res.status(400).json({ error: "Choose an image to upload." });
+      return;
+    }
+
+    try {
+      const [existing] = await db
+        .select()
+        .from(categories)
+        .where(eq(categories.id, id.data))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Category not found." });
+        return;
+      }
+
+      if (!detectImageType(file.buffer)) {
+        res.status(400).json({
+          error: `"${file.originalname}" is not a JPG, PNG, or WebP image.`,
+        });
+        return;
+      }
+
+      let processed: Buffer;
+
+      try {
+        processed = await processImage(file.buffer, { width: 1200 });
+      } catch {
+        throw new HttpError(
+          400,
+          `"${file.originalname}" could not be processed as an image. Please try a different file.`,
+        );
+      }
+
+      const uploaded = await uploadImageObject({
+        folder: "categories",
+        ownerId: existing.id,
+        buffer: processed,
+        errorMessage:
+          "We could not save the image. Please try again.",
+      });
+
+      try {
+        const result = await db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select()
+            .from(categories)
+            .where(eq(categories.id, existing.id))
+            .for("update");
+
+          if (!locked) {
+            throw new HttpError(404, "Category not found.");
+          }
+
+          const previousPath = locked.imageStoragePath;
+
+          await tx
+            .update(categories)
+            .set({
+              imageUrl: uploaded.url,
+              imageStoragePath: uploaded.path,
+              updatedAt: new Date(),
+            })
+            .where(eq(categories.id, locked.id));
+
+          await writeAudit(tx, {
+            adminUserId: req.admin!.id,
+            action: "category.image.add",
+            entity: "category",
+            entityId: locked.id,
+            details: { fields: ["image_url", "image_storage_path"] },
+          });
+
+          const [category] = await tx
+            .select()
+            .from(categories)
+            .where(eq(categories.id, locked.id))
+            .limit(1);
+
+          const [productCount] = await tx
+            .select({ value: count() })
+            .from(products)
+            .where(eq(products.categoryId, locked.id));
+
+          return {
+            category,
+            previousPath,
+            productCount: Number(productCount?.value ?? 0),
+          };
+        });
+
+        if (
+          result.previousPath &&
+          result.previousPath !== uploaded.path
+        ) {
+          await deleteImageObjects(
+            [result.previousPath],
+            "category image objects",
+          );
+        }
+
+        res
+          .status(201)
+          .json(serializeCategory(result.category, result.productCount));
+      } catch (error) {
+        await deleteImageObjects(
+          [uploaded.path],
+          "category image objects",
+        );
+        throw error;
+      }
+    } catch (error) {
+      sendError(res, error, "Failed to upload category image");
+    }
+  },
+);
+
+adminCategoriesRouter.delete(
+  "/categories/:id/image",
+  async (req: Request, res: Response) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      res.status(400).json({ error: "A valid category id is required." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      let removedPath: string | null = null;
+
+      const result = await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(categories)
+          .where(eq(categories.id, id.data))
+          .for("update");
+
+        if (!existing) {
+          throw new HttpError(404, "Category not found.");
+        }
+
+        if (!existing.imageUrl && !existing.imageStoragePath) {
+          throw new HttpError(404, "This category has no image.");
+        }
+
+        removedPath = existing.imageStoragePath;
+
+        await tx
+          .update(categories)
+          .set({
+            imageUrl: null,
+            imageStoragePath: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(categories.id, existing.id));
+
+        await writeAudit(tx, {
+          adminUserId: req.admin!.id,
+          action: "category.image.delete",
+          entity: "category",
+          entityId: existing.id,
+          details: { fields: ["image_url", "image_storage_path"] },
+        });
+
+        const [category] = await tx
+          .select()
+          .from(categories)
+          .where(eq(categories.id, existing.id))
+          .limit(1);
+
+        const [productCount] = await tx
+          .select({ value: count() })
+          .from(products)
+          .where(eq(products.categoryId, existing.id));
+
+        return {
+          category,
+          productCount: Number(productCount?.value ?? 0),
+        };
+      });
+
+      if (removedPath) {
+        await deleteImageObjects(
+          [removedPath],
+          "category image objects",
+        );
+      }
+
+      res.json(serializeCategory(result.category, result.productCount));
+    } catch (error) {
+      sendError(res, error, "Failed to delete category image");
+    }
+  },
+);
+
 adminCategoriesRouter.delete(
   "/categories/:id",
   async (req: Request, res: Response) => {
@@ -419,6 +649,8 @@ adminCategoriesRouter.delete(
     }
 
     try {
+      let imageStoragePath: string | null = null;
+
       await db.transaction(async (tx) => {
         const [existing] = await tx
           .select()
@@ -429,6 +661,8 @@ adminCategoriesRouter.delete(
         if (!existing) {
           throw new HttpError(404, "Category not found.");
         }
+
+        imageStoragePath = existing.imageStoragePath;
 
         const [childCount] = await tx
           .select({ value: count() })
@@ -472,6 +706,13 @@ adminCategoriesRouter.delete(
           details: { fields: [] },
         });
       });
+
+      if (imageStoragePath) {
+        await deleteImageObjects(
+          [imageStoragePath],
+          "category image objects",
+        );
+      }
 
       res.json({ ok: true });
     } catch (error) {

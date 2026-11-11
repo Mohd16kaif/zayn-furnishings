@@ -983,7 +983,17 @@ publicRouter.get(
       const now = new Date();
 
       const rows = await db!
-        .select()
+        .select({
+          id: contentBlocks.id,
+          type: contentBlocks.type,
+          title: contentBlocks.title,
+          subtitle: contentBlocks.subtitle,
+          body: contentBlocks.body,
+          imageUrl: contentBlocks.imageUrl,
+          buttonText: contentBlocks.buttonText,
+          linkUrl: contentBlocks.linkUrl,
+          sortOrder: contentBlocks.sortOrder,
+        })
         .from(contentBlocks)
         .where(
           and(

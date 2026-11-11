@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { detectImageType, processImage } from "../lib/imageProcessing";
+import { detectImageType, processImage } from "../lib/imagePipeline";
 
 const createImage = () =>
   sharp({

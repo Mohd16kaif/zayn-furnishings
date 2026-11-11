@@ -2,6 +2,7 @@ export * from "./public";
 export * from "./delivery";
 export * from "./tokens";
 export * from "./zipCoverage";
+export * from "./content";
 
 export const API_NAME = "zayn-furnishings-api";
 
