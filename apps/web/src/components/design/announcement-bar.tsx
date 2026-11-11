@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { renderTokens } from "@zayn/shared";
 import { getContentHome, getSettings } from "@/lib/publicApi";
 
@@ -18,8 +19,11 @@ export async function AnnouncementBar() {
     announcement?.subtitle,
     settings,
   ).trim();
+  const buttonText = announcement?.button_text?.trim() ?? "";
+  const linkUrl = announcement?.link_url?.trim() ?? "";
+  const showLink = Boolean(buttonText && linkUrl);
 
-  if (!title && !subtitle) {
+  if (!title && !subtitle && !showLink) {
     return null;
   }
 
@@ -30,6 +34,22 @@ export async function AnnouncementBar() {
       ) : null}
       {subtitle ? (
         <span className="zf-announce__sub">{subtitle}</span>
+      ) : null}
+      {showLink ? (
+        linkUrl.startsWith("/") ? (
+          <Link className="zf-announce__link" href={linkUrl}>
+            {buttonText}
+          </Link>
+        ) : (
+          <a
+            className="zf-announce__link"
+            href={linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {buttonText}
+          </a>
+        )
       ) : null}
     </div>
   );

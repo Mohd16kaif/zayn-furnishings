@@ -10,7 +10,9 @@ import { adminDeliveryZonesRouter } from "./routes/adminDeliveryZones";
 import { adminProductsRouter } from "./routes/adminProducts";
 import { adminSettingsRouter } from "./routes/adminSettings";
 import { healthRouter } from "./routes/health";
+import { ordersRouter } from "./routes/orders";
 import { publicRouter } from "./routes/public";
+import { stripeWebhookRouter } from "./routes/webhooks";
 
 const app = express();
 
@@ -23,6 +25,9 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
+// Stripe signs the exact request bytes, so this must stay ahead of
+// express.json() or the signature check will always fail.
+app.use("/webhooks", stripeWebhookRouter);
 app.use(express.json({ limit: "1mb" }));
 
 // Required behind Render's proxy so rate limiting sees the real client IP.
@@ -33,6 +38,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use(healthRouter);
+app.use("/api", ordersRouter);
 app.use("/api/public", publicRouter);
 app.use("/admin", adminAuthRouter);
 app.use("/admin", adminCategoriesRouter);

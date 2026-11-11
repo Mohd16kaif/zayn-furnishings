@@ -414,6 +414,28 @@ html[data-zf-theme="dark"] .zf {
   text-transform: none;
 }
 
+.zf-announce__link {
+  display: inline-block;
+  margin-top: 2px;
+  color: inherit;
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.zf-announce__link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.zf-announce__link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
 /* ---------- Scroll progress ---------- */
 
 .zf-progress {

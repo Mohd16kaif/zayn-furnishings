@@ -43,6 +43,13 @@
       "when": 1794391962877,
       "tag": "0005_wealthy_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794397164646,
+      "tag": "0006_left_colonel_america",
+      "breakpoints": true
     }
   ]
 }

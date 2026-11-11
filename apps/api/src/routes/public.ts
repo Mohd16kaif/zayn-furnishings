@@ -21,19 +21,23 @@ import {
 } from "drizzle-orm";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
-import { computeDelivery, type PublicDeliveryCheck } from "@zayn/shared";
+import type { PublicDeliveryCheck } from "@zayn/shared";
 import { z } from "zod";
 import { env } from "../config/env";
 import { db } from "../db/client";
 import {
   categories,
   contentBlocks,
-  deliveryZones,
   productImages,
   products,
   type Product,
 } from "../db/schema";
 import { sendError, sendValidationError } from "../lib/adminCatalog";
+import {
+  computeDeliveryQuote,
+  type DeliveryZoneRow,
+} from "../lib/deliveryPricing";
+import { primaryImagesByProduct } from "../lib/productImages";
 import { readStoreSettings } from "../lib/storeSettings";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
@@ -171,33 +175,6 @@ function serializePublicProductCard(
   };
 }
 
-async function primaryImagesByProduct(
-  productIds: string[],
-): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
-
-  if (productIds.length === 0 || !db) {
-    return result;
-  }
-
-  const rows = await db
-    .select({
-      productId: productImages.productId,
-      url: productImages.url,
-    })
-    .from(productImages)
-    .where(inArray(productImages.productId, productIds))
-    .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt));
-
-  for (const row of rows) {
-    if (!result.has(row.productId)) {
-      result.set(row.productId, row.url);
-    }
-  }
-
-  return result;
-}
-
 const productsQuerySchema = z.object({
   category: z.string().trim().min(1).max(200).optional(),
   q: z.string().trim().min(1).max(200).optional(),
@@ -247,40 +224,6 @@ const cartValidateSchema = z.object({
     .optional(),
 });
 
-async function readFreeDeliveryThreshold(): Promise<number | null> {
-  const settings = await readStoreSettings(db!);
-
-  return settings.free_delivery_threshold_cents;
-}
-
-type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
-
-async function findBestDeliveryZone(
-  zip: string,
-): Promise<DeliveryZoneRow | null> {
-  const zones = await db!
-    .select()
-    .from(deliveryZones)
-    .where(
-      and(
-        eq(deliveryZones.isActive, true),
-        lte(deliveryZones.zipStart, zip),
-        gte(deliveryZones.zipEnd, zip),
-      ),
-    );
-
-  if (zones.length === 0) {
-    return null;
-  }
-
-  return zones.reduce((current, zone) => {
-    const currentSpan =
-      Number(current.zipEnd) - Number(current.zipStart);
-    const zoneSpan = Number(zone.zipEnd) - Number(zone.zipStart);
-    return zoneSpan < currentSpan ? zone : current;
-  });
-}
-
 function serializeDeliveryZone(zone: DeliveryZoneRow) {
   return {
     name: zone.name,
@@ -295,7 +238,11 @@ async function computeDeliveryCheck(
   zip: string,
   subtotalCents: number,
 ): Promise<PublicDeliveryCheck> {
-  const zone = await findBestDeliveryZone(zip);
+  const { zone, computation } = await computeDeliveryQuote(
+    db!,
+    zip,
+    subtotalCents,
+  );
 
   if (!zone) {
     return {
@@ -309,24 +256,14 @@ async function computeDeliveryCheck(
     };
   }
 
-  const settingsThresholdCents = await readFreeDeliveryThreshold();
-  const computed = computeDelivery({
-    zone: {
-      feeCents: zone.feeCents,
-      freeOverCents: zone.freeOverCents,
-    },
-    settingsThresholdCents,
-    subtotalCents,
-  });
-
   return {
     available: true,
     zone: serializeDeliveryZone(zone),
     subtotal_cents: subtotalCents,
-    fee_cents: computed.feeCents,
-    is_free: computed.isFree,
-    free_over_cents: computed.freeOverCents,
-    amount_to_free_cents: computed.amountToFreeCents,
+    fee_cents: computation.feeCents,
+    is_free: computation.isFree,
+    free_over_cents: computation.freeOverCents,
+    amount_to_free_cents: computation.amountToFreeCents,
   };
 }
 
@@ -486,6 +423,7 @@ publicRouter.get(
         .limit(6);
 
       const images = await primaryImagesByProduct(
+        db!,
         productRows.map((row) => row.product.id),
       );
 
@@ -665,6 +603,7 @@ publicRouter.get(
         .offset((page - 1) * page_size);
 
       const images = await primaryImagesByProduct(
+        db!,
         rows.map((row) => row.product.id),
       );
 
@@ -815,6 +754,7 @@ publicRouter.get(
           .limit(4);
 
         const relatedImages = await primaryImagesByProduct(
+          db!,
           relatedRows.map((item) => item.product.id),
         );
 
@@ -908,6 +848,7 @@ publicRouter.post(
       const productsById = new Map(rows.map((row) => [row.id, row]));
       const activeRows = rows.filter((row) => row.status === "active");
       const primaryImages = await primaryImagesByProduct(
+        db!,
         activeRows.map((row) => row.id),
       );
 

@@ -21,6 +21,8 @@ const envSchema = z.object({
   OWNER_EMAIL: optionalString,
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   STOREFRONT_API_KEY: optionalString,
+  STRIPE_SECRET_KEY: optionalString,
+  STRIPE_WEBHOOK_SECRET: optionalString,
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== "production") {
     return;
@@ -39,6 +41,22 @@ const envSchema = z.object({
       code: "custom",
       path: ["SUPABASE_SERVICE_ROLE_KEY"],
       message: "SUPABASE_SERVICE_ROLE_KEY is required in production",
+    });
+  }
+
+  if (!value.STRIPE_SECRET_KEY) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_SECRET_KEY"],
+      message: "STRIPE_SECRET_KEY is required in production",
+    });
+  }
+
+  if (!value.STRIPE_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_WEBHOOK_SECRET"],
+      message: "STRIPE_WEBHOOK_SECRET is required in production",
     });
   }
 });

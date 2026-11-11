@@ -1,0 +1,1 @@
+ALTER TABLE "deliveries" ALTER COLUMN "method" DROP NOT NULL;
