@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { baseColumns } from "./common";
@@ -16,9 +17,12 @@ export const customers = pgTable(
   {
     ...baseColumns(),
     authUserId: uuid("auth_user_id").unique(),
-    email: text("email").notNull().unique(),
+    email: text("email"),
     name: text("name"),
-    phone: text("phone"),
+    phone: text("phone").notNull(),
+    phoneVerifiedAt: timestamp("phone_verified_at", {
+      withTimezone: true,
+    }),
     smsOptIn: boolean("sms_opt_in").default(false).notNull(),
     smsOptInAt: timestamp("sms_opt_in_at", { withTimezone: true }),
     marketingEmailOptIn: boolean("marketing_email_opt_in")
@@ -30,7 +34,10 @@ export const customers = pgTable(
       "customers_email_lowercase",
       sql`${table.email} = lower(${table.email})`,
     ),
-    index("customers_phone_idx").on(table.phone),
+    uniqueIndex("customers_phone_unique")
+      .on(table.phone)
+      .where(sql`${table.phone} is not null`),
+    index("customers_email_idx").on(table.email),
   ],
 );
 

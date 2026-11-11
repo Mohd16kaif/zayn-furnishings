@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-import { isIP } from "node:net";
 import {
   and,
   asc,
@@ -23,7 +21,6 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import type { PublicDeliveryCheck } from "@zayn/shared";
 import { z } from "zod";
-import { env } from "../config/env";
 import { db } from "../db/client";
 import {
   categories,
@@ -38,40 +35,16 @@ import {
   type DeliveryZoneRow,
 } from "../lib/deliveryPricing";
 import { primaryImagesByProduct } from "../lib/productImages";
+import {
+  storefrontKeyMatches,
+  trustedVisitorIp,
+} from "../lib/storefrontAccess";
 import { readStoreSettings } from "../lib/storeSettings";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 const PUBLIC_RATE_LIMIT = 120;
 const STOREFRONT_RATE_LIMIT = 300;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-function storefrontKeyMatches(req: Request): boolean {
-  const provided = req.get("x-storefront-key");
-  const expected = env.STOREFRONT_API_KEY;
-
-  if (!provided || !expected) {
-    return false;
-  }
-
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  const providedBuffer = Buffer.from(provided, "utf8");
-
-  if (expectedBuffer.length !== providedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(expectedBuffer, providedBuffer);
-}
-
-function trustedVisitorIp(req: Request): string | null {
-  if (!storefrontKeyMatches(req)) {
-    return null;
-  }
-
-  const visitorIp = req.get("x-visitor-ip")?.trim();
-
-  return visitorIp && isIP(visitorIp) ? visitorIp : null;
-}
 
 const publicRateLimiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,

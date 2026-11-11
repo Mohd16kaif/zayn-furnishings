@@ -1,6 +1,7 @@
 export * from "./public";
 export * from "./delivery";
 export * from "./pricing";
+export * from "./phone";
 export * from "./tokens";
 export * from "./zipCoverage";
 export * from "./content";

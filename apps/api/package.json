@@ -14,7 +14,9 @@
     "db:seed-categories": "tsx src/scripts/seedCategories.ts",
     "db:clean-category-descriptions": "tsx src/scripts/cleanCategoryDescriptions.ts",
     "db:studio": "drizzle-kit studio",
-    "admin:create-owner": "tsx src/scripts/createOwner.ts"
+    "admin:create-owner": "tsx src/scripts/createOwner.ts",
+    "orders:cancel-stale": "tsx src/scripts/cancelStalePendingOrders.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
@@ -29,6 +31,7 @@
     "postgres": "^4.1.0",
     "sharp": "^0.35.5",
     "stripe": "^23.1.0",
+    "twilio": "^6.3.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -38,6 +41,7 @@
     "@types/node": "^26.6.6",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
   }
 }

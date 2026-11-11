@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import { adminUsers } from "./admin";
 import { auditLog } from "./audit";
+import { customerSessions } from "./auth";
 import { cartItems, carts } from "./carts";
 import { categories } from "./categories";
 import { addresses, customers } from "./customers";
@@ -45,7 +46,18 @@ export const customersRelations = relations(customers, ({ many }) => ({
   carts: many(carts),
   orders: many(orders),
   notifications: many(notificationsLog),
+  sessions: many(customerSessions),
 }));
+
+export const customerSessionsRelations = relations(
+  customerSessions,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerSessions.customerId],
+      references: [customers.id],
+    }),
+  }),
+);
 
 export const addressesRelations = relations(addresses, ({ one }) => ({
   customer: one(customers, {

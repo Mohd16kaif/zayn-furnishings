@@ -138,11 +138,11 @@ export type ApiResult<T> = {
   error?: string;
 };
 
-function apiUrl(): string {
+export function apiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
 }
 
-function requestHeaders(
+export function requestHeaders(
   visitorIp?: string | null,
 ): Record<string, string> {
   const headers: Record<string, string> = {};

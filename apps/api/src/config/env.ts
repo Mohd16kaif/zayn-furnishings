@@ -23,6 +23,9 @@ const envSchema = z.object({
   STOREFRONT_API_KEY: optionalString,
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
+  TWILIO_ACCOUNT_SID: optionalString,
+  TWILIO_AUTH_TOKEN: optionalString,
+  TWILIO_VERIFY_SERVICE_SID: optionalString,
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== "production") {
     return;

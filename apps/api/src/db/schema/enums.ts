@@ -63,6 +63,11 @@ export const stockMovementReasonEnum = pgEnum("stock_movement_reason", [
   "correction",
 ]);
 
+export const phoneVerificationKindEnum = pgEnum("phone_verification_kind", [
+  "start",
+  "check",
+]);
+
 export const notificationChannelEnum = pgEnum("notification_channel", [
   "email",
   "sms",

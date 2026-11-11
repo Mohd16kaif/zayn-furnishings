@@ -9,6 +9,8 @@ import { adminContentRouter } from "./routes/adminContent";
 import { adminDeliveryZonesRouter } from "./routes/adminDeliveryZones";
 import { adminProductsRouter } from "./routes/adminProducts";
 import { adminSettingsRouter } from "./routes/adminSettings";
+import { activePhoneVerifierName } from "./lib/phoneVerifier";
+import { authRouter } from "./routes/auth";
 import { healthRouter } from "./routes/health";
 import { ordersRouter } from "./routes/orders";
 import { publicRouter } from "./routes/public";
@@ -38,6 +40,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use(healthRouter);
+app.use("/api/auth", authRouter);
 app.use("/api", ordersRouter);
 app.use("/api/public", publicRouter);
 app.use("/admin", adminAuthRouter);
@@ -46,6 +49,8 @@ app.use("/admin", adminContentRouter);
 app.use("/admin", adminSettingsRouter);
 app.use("/admin", adminDeliveryZonesRouter);
 app.use("/admin", adminProductsRouter);
+
+console.log(`Phone verifier: ${activePhoneVerifierName}`);
 
 app.listen(env.PORT, () => {
   console.log(`API listening on http://localhost:${env.PORT}`);

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import {
@@ -19,6 +19,7 @@ import {
   type Product,
 } from "../db/schema";
 import { sendValidationError } from "../lib/adminCatalog";
+import { requireCustomer } from "../lib/customerAuth";
 import { computeDeliveryQuote } from "../lib/deliveryPricing";
 import { primaryImagesByProduct } from "../lib/productImages";
 import { stripe } from "../lib/stripe";
@@ -79,13 +80,6 @@ const createOrderSchema = z
       .refine(
         (value) => z.string().email().safeParse(value).success,
         "Enter a valid email address.",
-      ),
-    phone: z
-      .string()
-      .trim()
-      .regex(
-        /^\+1\d{10}$/,
-        "Enter a US phone number in E.164 format (e.g. +15551234567).",
       ),
     shipping_address: shippingAddressSchema,
     discount_code: z.string().trim().min(1).max(64).optional(),
@@ -159,6 +153,7 @@ export const ordersRouter = Router();
 ordersRouter.post(
   "/orders",
   orderRateLimiter,
+  requireCustomer,
   async (req: Request, res: Response) => {
     const parsed = createOrderSchema.safeParse(normalizeOrderBody(req.body));
 
@@ -316,30 +311,37 @@ ordersRouter.post(
       });
 
       const address = input.shipping_address;
+      const customerId = req.customer!.id;
       const created = await db.transaction(async (tx) => {
         const images = await primaryImagesByProduct(tx, productIds);
-        const smsOptInAt = input.sms_opt_in ? new Date() : null;
+        const [existingCustomer] = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.id, customerId))
+          .for("update");
+
+        if (!existingCustomer) {
+          throw new Error("Customer account no longer exists.");
+        }
 
         const [customer] = await tx
-          .insert(customers)
-          .values({
+          .update(customers)
+          .set({
             email: input.email,
-            name: address.name,
-            phone: input.phone,
-            smsOptIn: input.sms_opt_in,
-            smsOptInAt,
+            name: existingCustomer.name || address.name,
+            ...(input.sms_opt_in
+              ? {
+                  smsOptIn: true,
+                  smsOptInAt: new Date(),
+                }
+              : {}),
+            updatedAt: new Date(),
           })
-          .onConflictDoUpdate({
-            target: customers.email,
-            set: {
-              name: address.name,
-              phone: input.phone,
-              smsOptIn: input.sms_opt_in,
-              smsOptInAt,
-              updatedAt: new Date(),
-            },
-          })
-          .returning({ id: customers.id });
+          .where(eq(customers.id, existingCustomer.id))
+          .returning({
+            id: customers.id,
+            phone: customers.phone,
+          });
 
         const [order] = await tx
           .insert(orders)
@@ -359,7 +361,7 @@ ordersRouter.post(
             shippingCity: address.city,
             shippingState: address.state,
             shippingZip: address.zip,
-            shippingPhone: input.phone,
+            shippingPhone: customer.phone,
           })
           .returning({
             id: orders.id,
@@ -456,6 +458,107 @@ ordersRouter.post(
       res.status(500).json({
         error: "We could not create your order. Please try again.",
       });
+    }
+  },
+);
+
+ordersRouter.get(
+  "/orders/:orderNumber",
+  requireCustomer,
+  async (req: Request, res: Response) => {
+    const parsed = z
+      .string()
+      .trim()
+      .min(1)
+      .max(40)
+      .safeParse(req.params.orderNumber);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "A valid order number is required." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.orderNumber, parsed.data),
+            eq(orders.customerId, req.customer!.id),
+          ),
+        )
+        .limit(1);
+
+      if (!order) {
+        res.status(404).json({ error: "Order not found." });
+        return;
+      }
+
+      const [items, deliveryRows] = await Promise.all([
+        db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, order.id)),
+        db
+          .select()
+          .from(deliveries)
+          .where(eq(deliveries.orderId, order.id))
+          .limit(1),
+      ]);
+      const delivery = deliveryRows[0] ?? null;
+
+      res.set("Cache-Control", "no-store");
+      res.json({
+        order_number: order.orderNumber,
+        status: order.status,
+        created_at: order.createdAt,
+        subtotal_cents: order.subtotalCents,
+        discount_cents: order.discountCents,
+        delivery_fee_cents: order.deliveryFeeCents,
+        tax_cents: order.taxCents,
+        total_cents: order.totalCents,
+        discount_code: order.discountCode,
+        address: {
+          name: order.shippingName,
+          line1: order.shippingLine1,
+          line2: order.shippingLine2,
+          city: order.shippingCity,
+          state: order.shippingState,
+          zip: order.shippingZip,
+        },
+        delivery_status: delivery?.status ?? null,
+        delivery: delivery
+          ? {
+              status: delivery.status,
+              method: delivery.method,
+              scheduled_date: delivery.scheduledDate,
+              time_window: delivery.timeWindow,
+              tracking_number: delivery.trackingNumber,
+              carrier: delivery.carrier,
+            }
+          : null,
+        items: items.map((item) => ({
+          product_id: item.productId,
+          name: item.nameSnapshot,
+          sku: item.skuSnapshot,
+          image_url: item.imageUrlSnapshot,
+          unit_price_cents: item.unitPriceCents,
+          quantity: item.quantity,
+          line_total_cents: item.lineTotalCents,
+        })),
+      });
+    } catch (error) {
+      console.error(
+        "Failed to load customer order:",
+        error instanceof Error ? error.message : error,
+      );
+      res.status(500).json({ error: "We could not load that order." });
     }
   },
 );

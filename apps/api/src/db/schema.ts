@@ -1,5 +1,6 @@
 export * from "./schema/common";
 export * from "./schema/enums";
+export * from "./schema/auth";
 export * from "./schema/categories";
 export * from "./schema/products";
 export * from "./schema/customers";
