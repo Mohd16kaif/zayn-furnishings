@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { db } from "../db/client";
@@ -11,6 +12,10 @@ import { readStoreSettings } from "../lib/storeSettings";
 import { requireAdmin, requireRole } from "../middleware/requireAdmin";
 
 const PHONE_PATTERN = /^[\d\s+()-]{7,20}$/;
+
+function jsonbValue(value: unknown) {
+  return sql`${JSON.stringify(value)}::jsonb`;
+}
 
 const settingsUpdateSchema = z.object({
   store_name: z
@@ -100,10 +105,16 @@ adminSettingsRouter.patch(
         for (const item of values) {
           await tx
             .insert(storeSettings)
-            .values({ key: item.key, value: item.value })
+            .values({
+              key: item.key,
+              value: jsonbValue(item.value),
+            })
             .onConflictDoUpdate({
               target: storeSettings.key,
-              set: { value: item.value, updatedAt: new Date() },
+              set: {
+                value: jsonbValue(item.value),
+                updatedAt: new Date(),
+              },
             });
         }
 

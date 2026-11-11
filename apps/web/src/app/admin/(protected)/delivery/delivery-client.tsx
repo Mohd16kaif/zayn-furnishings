@@ -23,6 +23,7 @@ import {
   requestDelivery,
   type DeliveryResult,
 } from "@/lib/deliveryClient";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -59,6 +60,8 @@ export function DeliveryClient() {
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AdminDeliveryZone | null>(null);
+  const [confirmZone, setConfirmZone] =
+    useState<AdminDeliveryZone | null>(null);
 
   const [testZip, setTestZip] = useState("");
   const [testTotal, setTestTotal] = useState("");
@@ -163,15 +166,8 @@ export function DeliveryClient() {
     }
   }
 
-  async function remove(zone: AdminDeliveryZone) {
-    const confirmed = window.confirm(
-      `Delete the "${zone.name}" delivery zone? This cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+  async function deleteZone(zone: AdminDeliveryZone) {
+    setConfirmZone(null);
     setBusy(true);
     setActionError("");
     setNotice("");
@@ -398,7 +394,7 @@ export function DeliveryClient() {
                               <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => void remove(zone)}
+                                onClick={() => setConfirmZone(zone)}
                                 className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Delete
@@ -556,6 +552,26 @@ export function DeliveryClient() {
           }}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={confirmZone !== null}
+        title="Delete this delivery zone?"
+        description={
+          confirmZone
+            ? `"${confirmZone.name}" (${zipRange(
+                confirmZone,
+              )}) will be removed. Customers in those ZIP codes will no longer see a delivery option. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete zone"
+        busy={busy}
+        onCancel={() => setConfirmZone(null)}
+        onConfirm={() => {
+          if (confirmZone) {
+            void deleteZone(confirmZone);
+          }
+        }}
+      />
     </div>
   );
 }

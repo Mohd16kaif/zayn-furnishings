@@ -1,3 +1,4 @@
+import { uncoveredZipRanges } from "@zayn/shared";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -10,7 +11,6 @@ import {
   writeAudit,
   type Executor,
 } from "../lib/adminCatalog";
-import { uncoveredZipRanges } from "../lib/zipCoverage";
 import { requireAdmin, requireRole } from "../middleware/requireAdmin";
 
 const zipSchema = z

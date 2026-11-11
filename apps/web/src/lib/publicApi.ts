@@ -23,6 +23,8 @@ const DEFAULT_API_URL = "http://localhost:4000";
 const REVALIDATE_SECONDS = 60;
 const API_TIMEOUT_MS = 8_000;
 
+export const PUBLIC_SETTINGS_TAG = "public-settings";
+
 export const DEFAULT_STORE_SETTINGS: PublicStoreSettings = {
   store_name: "Zayn Furnishings",
   phone: "",
@@ -178,13 +180,17 @@ async function safeGet<T>(
   validate: (value: unknown) => boolean,
   revalidateSeconds = REVALIDATE_SECONDS,
   visitorIp?: string | null,
+  tags: string[] = [],
 ): Promise<ApiResult<T>> {
   const url = `${apiUrl()}/api/public${path}`;
 
   try {
     const response = await fetch(url, {
       headers: requestHeaders(visitorIp),
-      next: { revalidate: revalidateSeconds },
+      next: {
+        revalidate: revalidateSeconds,
+        ...(tags.length > 0 ? { tags } : {}),
+      },
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
@@ -303,7 +309,14 @@ export function getCategories(): Promise<ApiResult<PublicCategoryNode[]>> {
 }
 
 export function getSettings(): Promise<ApiResult<PublicStoreSettings>> {
-  return safeGet("/settings", DEFAULT_STORE_SETTINGS, isSettings);
+  return safeGet(
+    "/settings",
+    DEFAULT_STORE_SETTINGS,
+    isSettings,
+    REVALIDATE_SECONDS,
+    null,
+    [PUBLIC_SETTINGS_TAG],
+  );
 }
 
 export function getContentHome(): Promise<ApiResult<PublicHomeContent>> {

@@ -11,6 +11,7 @@ import {
   type ProductListResponse,
 } from "@/lib/adminApi";
 import { formatCents } from "@/lib/money";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 
 const inputClass =
   "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10";
@@ -58,6 +59,8 @@ export function ProductsClient() {
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmProduct, setConfirmProduct] =
+    useState<AdminProduct | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -191,14 +194,7 @@ export function ProductsClient() {
   }
 
   async function deleteProduct(product: AdminProduct) {
-    const confirmed = window.confirm(
-      `Delete "${product.name}"? This cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmProduct(null);
     setBusyId(product.id);
     setActionError("");
     setNotice("");
@@ -498,7 +494,7 @@ export function ProductsClient() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => void deleteProduct(product)}
+                            onClick={() => setConfirmProduct(product)}
                             disabled={busyId === product.id}
                             className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -543,6 +539,24 @@ export function ProductsClient() {
           </div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmProduct !== null}
+        title="Delete this product?"
+        description={
+          confirmProduct
+            ? `"${confirmProduct.name}" will be permanently removed from the catalog. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete product"
+        busy={busyId === confirmProduct?.id}
+        onCancel={() => setConfirmProduct(null)}
+        onConfirm={() => {
+          if (confirmProduct) {
+            void deleteProduct(confirmProduct);
+          }
+        }}
+      />
     </div>
   );
 }

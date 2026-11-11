@@ -11,6 +11,7 @@
     "dev": "pnpm --filter @zayn/shared build && concurrently -n web,api -c cyan,magenta \"pnpm --filter web dev\" \"pnpm --filter @zayn/api dev\"",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
+    "test": "pnpm -r --if-present test",
     "start": "pnpm --filter @zayn/api start",
     "db:generate": "pnpm --filter @zayn/api db:generate",
     "db:migrate": "pnpm --filter @zayn/api db:migrate"

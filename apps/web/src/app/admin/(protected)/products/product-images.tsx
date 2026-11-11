@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useRef, useState, type DragEvent } from "react";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import {
   adminFetch,
   adminUpload,
@@ -45,6 +46,8 @@ export function ProductImages({
   const [altErrors, setAltErrors] = useState<Record<string, string>>({});
   const [savingAltId, setSavingAltId] = useState<string | null>(null);
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
+  const [confirmImage, setConfirmImage] =
+    useState<AdminProductImage | null>(null);
   const [reordering, setReordering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -258,14 +261,7 @@ export function ProductImages({
   }
 
   async function removeImage(image: AdminProductImage) {
-    const confirmed = window.confirm(
-      "Delete this photo? This cannot be undone.",
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmImage(null);
     setBusyImageId(image.id);
     setUploadError("");
     setNotice("");
@@ -508,7 +504,7 @@ export function ProductImages({
 
                   <button
                     type="button"
-                    onClick={() => void removeImage(image)}
+                    onClick={() => setConfirmImage(image)}
                     disabled={actionsDisabled}
                     className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -522,6 +518,20 @@ export function ProductImages({
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmImage !== null}
+        title="Delete this photo?"
+        description="The photo will be removed from this product. This cannot be undone."
+        confirmLabel="Delete photo"
+        busy={busyImageId === confirmImage?.id}
+        onCancel={() => setConfirmImage(null)}
+        onConfirm={() => {
+          if (confirmImage) {
+            void removeImage(confirmImage);
+          }
+        }}
+      />
     </section>
   );
 }

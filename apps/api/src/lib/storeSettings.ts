@@ -20,13 +20,17 @@ export const DEFAULT_STORE_SETTINGS: StoreSettingsValues = {
 export function coerceSettingValue(
   key: string,
   value: unknown,
-): string | number | boolean | undefined {
+): string | number | boolean | null | undefined {
   switch (key) {
     case "store_name":
     case "phone":
     case "email":
       return typeof value === "string" ? value : undefined;
     case "free_delivery_threshold_cents":
+      if (value === null) {
+        return null;
+      }
+
       return typeof value === "number" &&
         Number.isInteger(value) &&
         value >= 0
@@ -63,7 +67,9 @@ export async function readStoreSettings(
         result.email = value as string;
         break;
       case "free_delivery_threshold_cents":
-        result.free_delivery_threshold_cents = value as number;
+        result.free_delivery_threshold_cents = value as
+          | number
+          | null;
         break;
       case "show_financing":
         result.show_financing = value as boolean;

@@ -16,6 +16,7 @@ import {
   centsToDollarsInput,
   dollarsToCents,
 } from "@/lib/adminMoney";
+import { revalidatePublicSettings } from "@/lib/actions/revalidatePublicSettings";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -139,6 +140,7 @@ export function SettingsClient() {
       );
 
       applySettings(updated);
+      await revalidatePublicSettings();
       setNotice("Settings saved.");
     } catch (saveError) {
       if (saveError instanceof AdminApiError) {

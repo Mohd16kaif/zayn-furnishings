@@ -16,16 +16,19 @@ type AdminMe = {
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-const navItems: Array<{ label: string; href: string; enabled: boolean }> = [
-  { label: "Dashboard", href: "/admin", enabled: true },
-  { label: "Categories", href: "/admin/categories", enabled: true },
-  { label: "Products", href: "/admin/products", enabled: true },
-  { label: "Orders", href: "/admin/orders", enabled: false },
-  { label: "Deliveries", href: "/admin/deliveries", enabled: false },
-  { label: "Customers", href: "/admin/customers", enabled: false },
-  { label: "Content", href: "/admin/content", enabled: false },
-  { label: "Delivery", href: "/admin/delivery", enabled: true },
-  { label: "Settings", href: "/admin/settings", enabled: true },
+const navItems: Array<{ label: string; href: string }> = [
+  { label: "Dashboard", href: "/admin" },
+  { label: "Products", href: "/admin/products" },
+  { label: "Categories", href: "/admin/categories" },
+  { label: "Delivery zones", href: "/admin/delivery" },
+  { label: "Settings", href: "/admin/settings" },
+];
+
+const comingSoonItems = [
+  "Orders",
+  "Deliveries",
+  "Customers",
+  "Content",
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -169,7 +172,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   ? pathname === "/admin"
                   : pathname.startsWith(item.href);
 
-              return item.enabled ? (
+              return (
                 <Link
                   key={item.label}
                   href={item.href}
@@ -182,19 +185,28 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 >
                   {item.label}
                 </Link>
-              ) : (
-                <span
-                  key={item.label}
-                  aria-disabled="true"
-                  className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-stone-400"
-                >
-                  {item.label}
-                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-stone-500">
-                    Coming soon
-                  </span>
-                </span>
               );
             })}
+
+            <div
+              className="pt-4"
+              aria-label="Coming soon"
+            >
+              <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-400">
+                Coming soon
+              </p>
+              <div className="mt-2 space-y-1 border-t border-stone-200 pt-3">
+                {comingSoonItems.map((label) => (
+                  <span
+                    key={label}
+                    aria-disabled="true"
+                    className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-stone-400"
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
           </nav>
         </aside>
 
@@ -219,7 +231,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
           <div className="flex-1 p-6 lg:p-10">
             <nav
-              className="mb-6 flex flex-wrap gap-2 lg:hidden"
+              className="mb-3 flex flex-wrap gap-2 lg:hidden"
               aria-label="Admin navigation"
             >
               {navItems.map((item) => {
@@ -228,7 +240,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     ? pathname === "/admin"
                     : pathname.startsWith(item.href);
 
-                return item.enabled ? (
+                return (
                   <Link
                     key={item.label}
                     href={item.href}
@@ -241,16 +253,26 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   >
                     {item.label}
                   </Link>
-                ) : (
-                  <span
-                    key={item.label}
-                    aria-disabled="true"
-                    className="rounded-full border border-stone-200 px-3 py-1 text-xs text-stone-400"
-                  >
-                    {item.label}: Coming soon
-                  </span>
                 );
               })}
+            </nav>
+
+            <nav
+              className="mb-6 flex flex-wrap items-center gap-2 border-t border-stone-200 pt-3 lg:hidden"
+              aria-label="Coming soon"
+            >
+              <span className="w-full text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-400">
+                Coming soon
+              </span>
+              {comingSoonItems.map((label) => (
+                <span
+                  key={label}
+                  aria-disabled="true"
+                  className="rounded-full border border-stone-200 px-3 py-1 text-xs text-stone-400"
+                >
+                  {label}
+                </span>
+              ))}
             </nav>
             {children}
           </div>

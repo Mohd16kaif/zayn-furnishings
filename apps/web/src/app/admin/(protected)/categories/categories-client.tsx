@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import {
   adminFetch,
   AdminApiError,
@@ -25,6 +26,8 @@ export function CategoriesClient() {
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AdminCategory | null>(null);
+  const [confirmCategory, setConfirmCategory] =
+    useState<AdminCategory | null>(null);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -137,15 +140,8 @@ export function CategoriesClient() {
     }
   }
 
-  async function remove(category: AdminCategory) {
-    const confirmed = window.confirm(
-      `Delete the "${category.name}" category? This cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+  async function deleteCategory(category: AdminCategory) {
+    setConfirmCategory(null);
     setBusy(true);
     setActionError("");
     setNotice("");
@@ -229,7 +225,7 @@ export function CategoriesClient() {
           </button>
           <button
             type="button"
-            onClick={() => void remove(category)}
+            onClick={() => setConfirmCategory(category)}
             disabled={busy}
             className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -332,6 +328,24 @@ export function CategoriesClient() {
           }}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={confirmCategory !== null}
+        title="Delete this category?"
+        description={
+          confirmCategory
+            ? `"${confirmCategory.name}" will be removed from the catalog. Products in this category may need to be reassigned. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete category"
+        busy={busy}
+        onCancel={() => setConfirmCategory(null)}
+        onConfirm={() => {
+          if (confirmCategory) {
+            void deleteCategory(confirmCategory);
+          }
+        }}
+      />
     </div>
   );
 }
