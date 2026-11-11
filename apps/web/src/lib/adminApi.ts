@@ -41,12 +41,39 @@ export type AdminCategory = {
   slug: string;
   parent_id: string | null;
   image_url: string | null;
+  image_storage_path: string | null;
   description: string | null;
   sort_order: number;
   is_active: boolean;
   seo_title: string | null;
   seo_description: string | null;
   product_count: number;
+};
+
+export type AdminContentType =
+  | "announcement"
+  | "hero"
+  | "promo_card"
+  | "room_tile"
+  | "info_card"
+  | "faq";
+
+export type AdminContentBlock = {
+  id: string;
+  type: AdminContentType;
+  title: string | null;
+  subtitle: string | null;
+  body: string | null;
+  image_url: string | null;
+  storage_path: string | null;
+  button_text: string | null;
+  link_url: string | null;
+  sort_order: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type AdminProductImage = {

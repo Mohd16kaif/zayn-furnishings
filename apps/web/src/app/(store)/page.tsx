@@ -127,7 +127,7 @@ export default async function HomePage() {
   const counts = categoryCounts(categoryTree);
 
   const heroSlides: HeroSlide[] = blocksOf(content, "hero")
-    .filter((block) => Boolean(block.title))
+    .filter((block) => Boolean(block.title && block.image_url))
     .map((block) => ({
       title: block.title as string,
       subtitle: block.subtitle,

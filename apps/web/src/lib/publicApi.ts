@@ -24,6 +24,8 @@ const REVALIDATE_SECONDS = 60;
 const API_TIMEOUT_MS = 8_000;
 
 export const PUBLIC_SETTINGS_TAG = "public-settings";
+export const PUBLIC_CONTENT_TAG = "public-content";
+export const PUBLIC_CATEGORIES_TAG = "public-categories";
 
 export const DEFAULT_STORE_SETTINGS: PublicStoreSettings = {
   store_name: "Zayn Furnishings",
@@ -305,7 +307,14 @@ function isSearchSuggestions(value: unknown): value is SearchSuggestions {
  * category page still renders "Pieces arriving soon" for empty ones).
  */
 export function getCategories(): Promise<ApiResult<PublicCategoryNode[]>> {
-  return safeGet("/categories", [], isCategoryNodeArray);
+  return safeGet(
+    "/categories",
+    [],
+    isCategoryNodeArray,
+    REVALIDATE_SECONDS,
+    null,
+    [PUBLIC_CATEGORIES_TAG],
+  );
 }
 
 export function getSettings(): Promise<ApiResult<PublicStoreSettings>> {
@@ -320,7 +329,14 @@ export function getSettings(): Promise<ApiResult<PublicStoreSettings>> {
 }
 
 export function getContentHome(): Promise<ApiResult<PublicHomeContent>> {
-  return safeGet("/content/home", {}, isHomeContent);
+  return safeGet(
+    "/content/home",
+    {},
+    isHomeContent,
+    REVALIDATE_SECONDS,
+    null,
+    [PUBLIC_CONTENT_TAG],
+  );
 }
 
 export type ProductQuery = {

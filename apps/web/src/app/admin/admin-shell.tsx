@@ -20,6 +20,7 @@ const navItems: Array<{ label: string; href: string }> = [
   { label: "Dashboard", href: "/admin" },
   { label: "Products", href: "/admin/products" },
   { label: "Categories", href: "/admin/categories" },
+  { label: "Content", href: "/admin/content" },
   { label: "Delivery zones", href: "/admin/delivery" },
   { label: "Settings", href: "/admin/settings" },
 ];
@@ -28,7 +29,6 @@ const comingSoonItems = [
   "Orders",
   "Deliveries",
   "Customers",
-  "Content",
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {

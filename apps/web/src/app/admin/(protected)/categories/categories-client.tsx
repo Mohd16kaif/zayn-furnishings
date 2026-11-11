@@ -3,10 +3,17 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import {
+  AdminToast,
+  useAdminToast,
+  type ToastKind,
+} from "@/components/admin/admin-toast";
+import { SingleImageUploader } from "@/components/admin/single-image-uploader";
+import {
   adminFetch,
   AdminApiError,
   type AdminCategory,
 } from "@/lib/adminApi";
+import { revalidateStorefront } from "@/lib/actions/revalidateStorefront";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10";
@@ -21,13 +28,12 @@ export function CategoriesClient() {
     "loading",
   );
   const [error, setError] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AdminCategory | null>(null);
   const [confirmCategory, setConfirmCategory] =
     useState<AdminCategory | null>(null);
+  const { toast, showToast, dismissToast } = useAdminToast();
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -92,13 +98,25 @@ export function CategoriesClient() {
   function openCreate() {
     setEditing(null);
     setFormOpen(true);
-    setNotice("");
   }
 
   function openEdit(category: AdminCategory) {
     setEditing(category);
     setFormOpen(true);
-    setNotice("");
+  }
+
+  function handleImageChanged(categoryId: string, imageUrl: string | null) {
+    setCategories((previous) =>
+      previous.map((item) =>
+        item.id === categoryId ? { ...item, image_url: imageUrl } : item,
+      ),
+    );
+    setEditing((previous) =>
+      previous && previous.id === categoryId
+        ? { ...previous, image_url: imageUrl }
+        : previous,
+    );
+    void revalidateStorefront();
   }
 
   async function move(category: AdminCategory, direction: -1 | 1) {
@@ -116,8 +134,6 @@ export function CategoriesClient() {
     [next[index], next[target]] = [next[target], next[index]];
 
     setBusy(true);
-    setActionError("");
-    setNotice("");
 
     try {
       await adminFetch("/admin/categories/reorder", {
@@ -128,9 +144,11 @@ export function CategoriesClient() {
         })),
       });
       await load();
-      setNotice("Category order updated.");
+      await revalidateStorefront();
+      showToast("success", "Category order updated.");
     } catch (moveError) {
-      setActionError(
+      showToast(
+        "error",
         moveError instanceof Error
           ? moveError.message
           : "Unable to reorder categories.",
@@ -143,17 +161,17 @@ export function CategoriesClient() {
   async function deleteCategory(category: AdminCategory) {
     setConfirmCategory(null);
     setBusy(true);
-    setActionError("");
-    setNotice("");
 
     try {
       await adminFetch(`/admin/categories/${category.id}`, {
         method: "DELETE",
       });
       await load();
-      setNotice("Category deleted.");
+      await revalidateStorefront();
+      showToast("success", "Category deleted.");
     } catch (deleteError) {
-      setActionError(
+      showToast(
+        "error",
         deleteError instanceof Error
           ? deleteError.message
           : "Unable to delete the category.",
@@ -260,21 +278,7 @@ export function CategoriesClient() {
         </button>
       </div>
 
-      <div aria-live="polite" className="mt-4 space-y-2">
-        {notice ? (
-          <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            {notice}
-          </p>
-        ) : null}
-        {actionError ? (
-          <p
-            role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-          >
-            {actionError}
-          </p>
-        ) : null}
-      </div>
+      <AdminToast toast={toast} onDismiss={dismissToast} />
 
       <div className="mt-6 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
         {status === "loading" ? (
@@ -324,8 +328,14 @@ export function CategoriesClient() {
           onSaved={async () => {
             setFormOpen(false);
             await load();
-            setNotice(editing ? "Category updated." : "Category created.");
+            await revalidateStorefront();
+            showToast(
+              "success",
+              editing ? "Category updated." : "Category created.",
+            );
           }}
+          onImageChanged={handleImageChanged}
+          onToast={showToast}
         />
       ) : null}
 
@@ -355,11 +365,15 @@ function CategoryForm({
   editing,
   onClose,
   onSaved,
+  onImageChanged,
+  onToast,
 }: {
   categories: AdminCategory[];
   editing: AdminCategory | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  onImageChanged: (categoryId: string, imageUrl: string | null) => void;
+  onToast: (kind: ToastKind, message: string) => void;
 }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [parentId, setParentId] = useState(editing?.parent_id ?? "");
@@ -550,6 +564,31 @@ function CategoryForm({
             <p className="mt-1 text-xs text-stone-500">
               Optional. A short description for this category.
             </p>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-stone-800">
+              Category photo
+            </p>
+            {editing ? (
+              <div className="mt-2">
+                <SingleImageUploader
+                  endpoint={`/admin/categories/${editing.id}/image`}
+                  imageUrl={editing.image_url}
+                  alt={name.trim() || "Category"}
+                  helpText="Used in the shop menu and homepage. Wide photo, about 1200px. JPG, PNG, or WebP, up to 8 MB."
+                  disabled={saving}
+                  onChanged={(imageUrl) =>
+                    onImageChanged(editing.id, imageUrl)
+                  }
+                  onToast={onToast}
+                />
+              </div>
+            ) : (
+              <p className="mt-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-500">
+                Save this category first, then add a photo.
+              </p>
+            )}
           </div>
 
           <label className="flex items-center gap-2 text-sm text-stone-800">

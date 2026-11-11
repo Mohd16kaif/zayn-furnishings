@@ -406,6 +406,12 @@ async function main() {
     { name: "c-living-room", path: "/c/living-room" },
     { name: "search-sofa", path: "/search?q=sofa" },
     { name: "cart", path: "/cart" },
+    {
+      name: "admin-content",
+      path: "/admin/content",
+      widths: [390, 1280],
+      admin: true,
+    },
   ];
 
   if (productPath) {
@@ -427,7 +433,7 @@ async function main() {
   const rows = [];
 
   for (const entry of pages) {
-    for (const width of WIDTHS) {
+    for (const width of entry.widths ?? WIDTHS) {
       await page.setViewportSize({ width, height: HEIGHT });
       await page.goto(`${BASE_URL}${entry.path}`, {
         waitUntil: "domcontentloaded",
@@ -442,13 +448,19 @@ async function main() {
 
       const result = await evaluateChecks(page);
 
+      const adminPage = entry.admin === true;
       const overflowPass = result.overflow;
-      const cartPass = result.cartLinks === 1;
-      const searchPass = result.searchTriggers === 1;
-      const inputsPass = result.searchInputs === 0;
-      const navLinePass = width >= 1180 ? result.navSameLine : true;
+      const cartPass = adminPage ? true : result.cartLinks === 1;
+      const searchPass = adminPage ? true : result.searchTriggers === 1;
+      const inputsPass = adminPage ? true : result.searchInputs === 0;
+      const navLinePass = adminPage
+        ? true
+        : width >= 1180
+          ? result.navSameLine
+          : true;
       const iconsPass = result.iconsInside;
       const headingRelevant =
+        !adminPage &&
         (entry.path === "/c/living-room" ||
           entry.path === "/search?q=sofa") &&
         [360, 390, 430].includes(width);
