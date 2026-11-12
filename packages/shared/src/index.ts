@@ -4,6 +4,7 @@ export * from "./pricing";
 export * from "./phone";
 export * from "./tokens";
 export * from "./zipCoverage";
+export * from "./zipState";
 export * from "./content";
 
 export const API_NAME = "zayn-furnishings-api";

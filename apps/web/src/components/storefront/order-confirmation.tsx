@@ -255,8 +255,8 @@ export function OrderConfirmation({ initialOrder }: OrderConfirmationProps) {
                 </strong>
               </p>
               <address className="zf-order__address">
-                {address.map((line) => (
-                  <span key={line}>{line}</span>
+                {address.map((line, index) => (
+                  <span key={`${index}-${line}`}>{line}</span>
                 ))}
               </address>
             </div>

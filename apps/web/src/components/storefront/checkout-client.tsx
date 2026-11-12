@@ -11,7 +11,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { loadStripe } from "@stripe/stripe-js";
-import type { PublicDeliveryCheck } from "@zayn/shared";
+import {
+  zipMatchesState,
+  type PublicDeliveryCheck,
+} from "@zayn/shared";
 import { useCart } from "@/components/design/cart-provider";
 import { useCustomer } from "@/components/design/customer-provider";
 import {
@@ -105,6 +108,7 @@ export function CheckoutClient() {
   const [stockIssues, setStockIssues] = useState<string[]>([]);
   const [contactError, setContactError] = useState("");
   const [addressError, setAddressError] = useState("");
+  const [zipStateError, setZipStateError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(true);
 
@@ -440,6 +444,7 @@ export function CheckoutClient() {
 
     setAddress((current) => ({ ...current, ...patch }));
     setAddressError("");
+    setZipStateError("");
     invalidateOrder();
   }
 
@@ -479,6 +484,13 @@ export function CheckoutClient() {
 
     if (!ZIP_PATTERN.test(address.zip)) {
       setAddressError("Enter a 5-digit US ZIP code.");
+      return;
+    }
+
+    if (!zipMatchesState(address.zip, address.state)) {
+      setZipStateError(
+        "This ZIP code does not match the state you chose.",
+      );
       return;
     }
 
@@ -720,8 +732,8 @@ export function CheckoutClient() {
               your cart before checking out.
             </p>
             <ul className="zf-checkout__blocker-list">
-              {cartIssueNames.map((name) => (
-                <li key={name}>{name}</li>
+              {cartIssueNames.map((name, index) => (
+                <li key={`${index}-${name}`}>{name}</li>
               ))}
             </ul>
             <div className="zf-checkout__blocker-actions">
@@ -1004,6 +1016,17 @@ export function CheckoutClient() {
                     }
                     onBlur={() => {
                       if (ZIP_PATTERN.test(address.zip)) {
+                        if (
+                          address.state &&
+                          !zipMatchesState(address.zip, address.state)
+                        ) {
+                          setZipStateError(
+                            "This ZIP code does not match the state you chose.",
+                          );
+                          return;
+                        }
+
+                        setZipStateError("");
                         void checkDeliveryForZip(address.zip);
                       } else if (address.zip) {
                         setDeliveryError(
@@ -1012,6 +1035,11 @@ export function CheckoutClient() {
                       }
                     }}
                   />
+                  {zipStateError ? (
+                    <p className="zf-form__error" role="alert">
+                      {zipStateError}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1168,8 +1196,8 @@ export function CheckoutClient() {
                   <p>{orderError}</p>
                   {stockIssues.length > 0 ? (
                     <ul className="zf-checkout__blocker-list">
-                      {stockIssues.map((name) => (
-                        <li key={name}>{name}</li>
+                      {stockIssues.map((name, index) => (
+                        <li key={`${index}-${name}`}>{name}</li>
                       ))}
                     </ul>
                   ) : null}

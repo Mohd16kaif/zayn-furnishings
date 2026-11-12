@@ -1,10 +1,12 @@
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+import type Stripe from "stripe";
 import {
   calculateOrderTotals,
   calculateTaxCents,
   evaluateDiscountCode,
+  zipMatchesState,
   type DiscountIneligibilityReason,
 } from "@zayn/shared";
 import { z } from "zod";
@@ -22,6 +24,7 @@ import { sendValidationError } from "../lib/adminCatalog";
 import { requireCustomer } from "../lib/customerAuth";
 import { computeDeliveryQuote } from "../lib/deliveryPricing";
 import { primaryImagesByProduct } from "../lib/productImages";
+import { reconcileOrderPayment } from "../lib/reconcileOrderPayment";
 import { stripe } from "../lib/stripe";
 
 const ORDER_RATE_LIMIT = 10;
@@ -148,6 +151,10 @@ type OrderLine = {
   lineTotalCents: number;
 };
 
+type CreatePaymentIntentParams = Stripe.PaymentIntentCreateParams & {
+  payment_method_types: string[];
+};
+
 export const ordersRouter = Router();
 
 ordersRouter.post(
@@ -175,6 +182,13 @@ ordersRouter.post(
     }
 
     const input = parsed.data;
+
+    if (!zipMatchesState(input.zip, input.shipping_address.state)) {
+      res.status(400).json({
+        error: "This ZIP code does not match the state you chose.",
+      });
+      return;
+    }
 
     try {
       const requested = new Map<string, number>();
@@ -393,19 +407,24 @@ ordersRouter.post(
       let paymentIntent;
 
       try {
-        paymentIntent = await stripe.paymentIntents.create(
-          {
-            amount: totals.totalCents,
-            currency: "usd",
-            automatic_payment_methods: { enabled: true },
-            metadata: {
-              order_id: created.id,
-              order_number: created.orderNumber,
-            },
-            receipt_email: input.email,
-            description: `Order ${created.orderNumber}`,
+        const createParams: CreatePaymentIntentParams = {
+          amount: totals.totalCents,
+          currency: "usd",
+          payment_method_types: ["card", "link"],
+          metadata: {
+            order_id: created.id,
+            order_number: created.orderNumber,
           },
-          { idempotencyKey: `order-intent-${created.id}` },
+          receipt_email: input.email,
+          description: `Order ${created.orderNumber}`,
+        };
+
+        paymentIntent = await stripe.paymentIntents.create(
+          createParams,
+          {
+            idempotencyKey: `order-intent-${created.id}`,
+            apiVersion: "2024-06-20",
+          },
         );
 
         await db
@@ -552,7 +571,7 @@ ordersRouter.get(
     }
 
     try {
-      const [order] = await db
+      let [order] = await db
         .select()
         .from(orders)
         .where(
@@ -566,6 +585,27 @@ ordersRouter.get(
       if (!order) {
         res.status(404).json({ error: "Order not found." });
         return;
+      }
+
+      if (order.status === "pending" && order.stripePaymentIntentId) {
+        const reconciliation = await reconcileOrderPayment(order);
+
+        if (
+          reconciliation.status === "reconciled" &&
+          (reconciliation.result.status === "paid" ||
+            reconciliation.result.status === "processing" ||
+            reconciliation.result.status === "already_processed")
+        ) {
+          const [updated] = await db
+            .select()
+            .from(orders)
+            .where(eq(orders.id, order.id))
+            .limit(1);
+
+          if (updated) {
+            order = updated;
+          }
+        }
       }
 
       const [items, deliveryRows] = await Promise.all([

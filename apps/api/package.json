@@ -16,6 +16,7 @@
     "db:studio": "drizzle-kit studio",
     "admin:create-owner": "tsx src/scripts/createOwner.ts",
     "orders:cancel-stale": "tsx src/scripts/cancelStalePendingOrders.ts",
+    "orders:reconcile": "tsx src/scripts/reconcilePendingOrders.ts",
     "test": "vitest run"
   },
   "dependencies": {
