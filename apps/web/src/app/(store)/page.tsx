@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
+import { cacheLife, cacheTag } from "next/cache";
 import type { PublicCategoryNode, PublicContentBlock } from "@zayn/shared";
 import {
   getCategories,
   getContentHome,
   getProducts,
   getSettings,
+  PUBLIC_CATEGORIES_TAG,
+  PUBLIC_CONTENT_TAG,
+  PUBLIC_SETTINGS_TAG,
 } from "@/lib/publicApi";
 import { formatCents } from "@/lib/money";
 import { availableHomeImage } from "@/lib/homeImages";
@@ -22,6 +26,44 @@ import { InfoCards, type InfoCard } from "@/components/storefront/info-cards";
 import { Faq, type FaqItem } from "@/components/storefront/faq";
 
 export const instant = false;
+
+/**
+ * The storefront API fetches run in a cache scope so Cache Components can
+ * validate the page without treating runtime fetch internals (which read the
+ * current time) as blocking data. The API still filters scheduled content by
+ * starts_at/ends_at; the cache lifetime is the existing 60-second refresh.
+ */
+async function loadHomeData() {
+  "use cache";
+  cacheLife("minutes");
+  cacheTag(PUBLIC_SETTINGS_TAG, PUBLIC_CONTENT_TAG, PUBLIC_CATEGORIES_TAG);
+
+  const [settingsResult, contentResult, categoriesResult, featuredResult] =
+    await Promise.all([
+      getSettings(),
+      getContentHome(),
+      getCategories(),
+      getProducts({ featured: true, pageSize: 8 }),
+    ]);
+
+  let featuredItems = featuredResult.data.items;
+
+  if (featuredItems.length === 0) {
+    const newest = await getProducts({ sort: "newest", pageSize: 8 });
+    featuredItems = newest.data.items;
+  }
+
+  const allProducts = await getProducts({ pageSize: 1 });
+
+  return {
+    settingsResult,
+    contentResult,
+    categoriesResult,
+    featuredResult,
+    featuredItems,
+    allProducts,
+  };
+}
 
 export const metadata: Metadata = {
   title: {
@@ -103,26 +145,18 @@ function faqJsonLd(faqs: FaqItem[]) {
 }
 
 export default async function HomePage() {
-  const [settingsResult, contentResult, categoriesResult, featuredResult] =
-    await Promise.all([
-      getSettings(),
-      getContentHome(),
-      getCategories(),
-      getProducts({ featured: true, pageSize: 8 }),
-    ]);
+  const {
+    settingsResult,
+    contentResult,
+    categoriesResult,
+    featuredResult,
+    featuredItems,
+    allProducts,
+  } = await loadHomeData();
 
   const settings = settingsResult.data;
   const content = contentResult.data;
   const categoryTree = categoriesResult.data;
-
-  let featuredItems = featuredResult.data.items;
-
-  if (featuredItems.length === 0) {
-    const newest = await getProducts({ sort: "newest", pageSize: 8 });
-    featuredItems = newest.data.items;
-  }
-
-  const allProducts = await getProducts({ pageSize: 1 });
 
   const counts = categoryCounts(categoryTree);
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cacheLife, cacheTag } from "next/cache";
 import {
   activeFilterCount,
   catalogHref,
@@ -8,7 +9,12 @@ import {
   firstParam,
   parseCatalogFilters,
 } from "@/lib/catalogFilters";
-import { getCategories, getProducts } from "@/lib/publicApi";
+import {
+  getCategories,
+  getProducts,
+  PUBLIC_CATEGORIES_TAG,
+  type ProductQuery,
+} from "@/lib/publicApi";
 import { ActiveFilters } from "@/components/storefront/active-filters";
 import { CatalogFilterPanel } from "@/components/storefront/catalog-filters";
 import { CatalogResults } from "@/components/storefront/catalog-results";
@@ -27,15 +33,29 @@ type SearchPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
+/**
+ * Cache the catalog reads so instant-navigation validation does not see
+ * runtime fetch internals as blocking time reads. The 60-second lifetime
+ * matches the existing fetch revalidation.
+ */
+async function loadSearchData(query: ProductQuery | null) {
+  "use cache";
+  cacheLife("minutes");
+  cacheTag(PUBLIC_CATEGORIES_TAG);
+
+  return Promise.all([
+    getCategories(),
+    query ? getProducts(query) : Promise.resolve(null),
+  ]);
+}
+
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const rawSearch = await searchParams;
   const q = firstParam(rawSearch.q).slice(0, 200);
   const filters = parseCatalogFilters(rawSearch);
+  const query = q ? buildProductQuery(filters, { q }) : null;
 
-  const [categoriesResult, productsResult] = await Promise.all([
-    getCategories(),
-    q ? getProducts(buildProductQuery(filters, { q })) : Promise.resolve(null),
-  ]);
+  const [categoriesResult, productsResult] = await loadSearchData(query);
 
   const categories = categoriesResult.data;
   const activeCount = activeFilterCount(filters);

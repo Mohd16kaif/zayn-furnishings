@@ -5,6 +5,7 @@ import {
   themeSeedScript,
 } from "@/components/design/fonts";
 import "@/styles/theme.css";
+import { CustomerProvider } from "@/components/design/customer-provider";
 import { ThemeProvider } from "@/components/design/theme-provider";
 
 export const metadata: Metadata = {
@@ -30,7 +31,9 @@ export default function DesignPreviewLayout({
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: themeSeedScript }} />
-      <ThemeProvider fontClassName={themeFontClass}>{children}</ThemeProvider>
+      <CustomerProvider initialCustomer={null}>
+        <ThemeProvider fontClassName={themeFontClass}>{children}</ThemeProvider>
+      </CustomerProvider>
     </>
   );
 }

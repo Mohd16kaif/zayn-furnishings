@@ -1,6 +1,20 @@
 import Link from "next/link";
+import { cacheLife, cacheTag } from "next/cache";
 import { renderTokens } from "@zayn/shared";
-import { getContentHome, getSettings } from "@/lib/publicApi";
+import {
+  getContentHome,
+  getSettings,
+  PUBLIC_CONTENT_TAG,
+  PUBLIC_SETTINGS_TAG,
+} from "@/lib/publicApi";
+
+async function loadAnnouncementData() {
+  "use cache";
+  cacheLife("minutes");
+  cacheTag(PUBLIC_CONTENT_TAG, PUBLIC_SETTINGS_TAG);
+
+  return Promise.all([getContentHome(), getSettings()]);
+}
 
 /**
  * Live announcement bar text (first active announcement block).
@@ -8,10 +22,7 @@ import { getContentHome, getSettings } from "@/lib/publicApi";
  * Token replacements use the live free-delivery threshold.
  */
 export async function AnnouncementBar() {
-  const [contentResult, settingsResult] = await Promise.all([
-    getContentHome(),
-    getSettings(),
-  ]);
+  const [contentResult, settingsResult] = await loadAnnouncementData();
   const announcement = contentResult.data.announcement?.[0];
   const settings = settingsResult.data;
   const title = renderTokens(announcement?.title, settings).trim();
