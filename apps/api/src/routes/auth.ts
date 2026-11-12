@@ -9,6 +9,7 @@ import {
   phoneVerificationAttempts,
 } from "../db/schema";
 import { sendValidationError } from "../lib/adminCatalog";
+import { env } from "../config/env";
 import {
   generateSessionToken,
   hashSessionToken,
@@ -16,7 +17,10 @@ import {
   serializeCustomer,
   SESSION_TTL_MS,
 } from "../lib/customerAuth";
-import { phoneVerifier } from "../lib/phoneVerifier";
+import {
+  activePhoneVerifierName,
+  phoneVerifier,
+} from "../lib/phoneVerifier";
 import {
   requestVisitorIp,
   storefrontKeyMatches,
@@ -174,7 +178,12 @@ authRouter.post(
         success: true,
       });
 
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+        dev_mode:
+          activePhoneVerifierName === "dev-stub" &&
+          env.NODE_ENV !== "production",
+      });
     } catch (error) {
       console.error(
         "Phone sign-in start failed:",

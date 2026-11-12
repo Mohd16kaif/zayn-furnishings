@@ -20,11 +20,13 @@ import {
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import type { PublicDeliveryCheck } from "@zayn/shared";
+import { evaluateDiscountCode } from "@zayn/shared";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
   categories,
   contentBlocks,
+  discountCodes,
   productImages,
   products,
   type Product,
@@ -196,6 +198,37 @@ const cartValidateSchema = z.object({
     .regex(/^\d{5}$/, "Enter a 5-digit US ZIP code.")
     .optional(),
 });
+
+const discountPreviewSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        product_id: z.string().uuid(),
+        quantity: z.number().int().min(1).max(10),
+      }),
+    )
+    .min(1)
+    .max(50),
+  discount_code: z.string().trim().min(1).max(64),
+});
+
+const discountPreviewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? ""),
+  message: { error: "Too many discount attempts. Please try again shortly." },
+});
+
+const DISCOUNT_PREVIEW_ERRORS = {
+  inactive: "That discount code is not valid.",
+  not_started: "That discount code is not active yet.",
+  expired: "That discount code has expired.",
+  min_order: "Your order does not meet the minimum for that discount code.",
+  usage_limit: "That discount code has reached its usage limit.",
+  invalid_value: "That discount code is not valid.",
+} as const;
 
 function serializeDeliveryZone(zone: DeliveryZoneRow) {
   return {
@@ -881,6 +914,113 @@ publicRouter.post(
       });
     } catch (error) {
       sendError(res, error, "Failed to validate cart");
+    }
+  },
+);
+
+publicRouter.post(
+  "/discount/preview",
+  discountPreviewLimiter,
+  async (req: Request, res: Response) => {
+    const parsed = discountPreviewSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!requireDatabase(res)) {
+      return;
+    }
+
+    res.set("Cache-Control", "no-store");
+
+    try {
+      const requested = new Map<string, number>();
+
+      for (const item of parsed.data.items) {
+        requested.set(
+          item.product_id,
+          (requested.get(item.product_id) ?? 0) + item.quantity,
+        );
+      }
+
+      const rows = await db!
+        .select({
+          id: products.id,
+          status: products.status,
+          stockQty: products.stockQty,
+          priceCents: products.priceCents,
+          salePriceCents: products.salePriceCents,
+        })
+        .from(products)
+        .where(inArray(products.id, Array.from(requested.keys())));
+      const productsById = new Map(rows.map((row) => [row.id, row]));
+      let subtotalCents = 0;
+
+      for (const [productId, quantity] of requested) {
+        const product = productsById.get(productId);
+
+        if (
+          !product ||
+          product.status !== "active" ||
+          product.stockQty < 1
+        ) {
+          continue;
+        }
+
+        const unitPriceCents =
+          product.salePriceCents ?? product.priceCents;
+        subtotalCents += unitPriceCents * quantity;
+      }
+
+      const normalizedCode = parsed.data.discount_code
+        .trim()
+        .toUpperCase();
+      const [code] = await db!
+        .select()
+        .from(discountCodes)
+        .where(eq(discountCodes.code, normalizedCode))
+        .limit(1);
+
+      if (!code) {
+        res.json({
+          valid: false,
+          error: DISCOUNT_PREVIEW_ERRORS.inactive,
+        });
+        return;
+      }
+
+      const evaluation = evaluateDiscountCode(
+        {
+          type: code.type,
+          value: code.value,
+          minOrderCents: code.minOrderCents,
+          startsAt: code.startsAt,
+          endsAt: code.endsAt,
+          usageLimit: code.usageLimit,
+          usedCount: code.usedCount,
+          isActive: code.isActive,
+        },
+        subtotalCents,
+      );
+
+      if (!evaluation.eligible) {
+        res.json({
+          valid: false,
+          error: DISCOUNT_PREVIEW_ERRORS[evaluation.reason],
+        });
+        return;
+      }
+
+      res.json({
+        valid: true,
+        code: code.code,
+        discount_cents: evaluation.discountCents,
+        subtotal_cents: subtotalCents,
+      });
+    } catch (error) {
+      sendError(res, error, "Failed to preview discount");
     }
   },
 );

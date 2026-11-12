@@ -15,6 +15,7 @@ import type {
 } from "@zayn/shared";
 import { formatCents } from "@/lib/money";
 import { useCartCount } from "./cart-provider";
+import { useCustomer } from "./customer-provider";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -128,6 +129,7 @@ export function Navbar({
   );
   const backFocusRef = useRef<string | null>(null);
   const cartCount = useCartCount();
+  const { customer } = useCustomer();
 
   const navEntries = useMemo<NavEntry[]>(() => {
     const next: NavEntry[] = categories.map((category) => ({
@@ -657,9 +659,13 @@ export function Navbar({
                   <SearchIcon />
                 </button>
                 <Link
-                  className="zf-icon-btn zf-nav__action--optional"
+                  className="zf-icon-btn zf-nav__account"
                   href="/account"
-                  aria-label="Account"
+                  aria-label={
+                    customer
+                      ? `Account, signed in as ${customer.phone_masked}`
+                      : "Account, sign in"
+                  }
                 >
                   <UserIcon />
                 </Link>

@@ -138,6 +138,15 @@ export type ApiResult<T> = {
   error?: string;
 };
 
+export type DiscountPreview =
+  | {
+      valid: true;
+      code: string;
+      discount_cents: number;
+      subtotal_cents: number;
+    }
+  | { valid: false; error: string };
+
 export function apiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
 }
@@ -470,6 +479,80 @@ export async function validateCart(
       data: EMPTY_CART_VALIDATION,
       error: error instanceof Error ? error.message : "Network error",
     };
+  }
+}
+
+export type DiscountPreviewResult = {
+  ok: boolean;
+  status: number;
+  data: DiscountPreview | null;
+};
+
+/**
+ * Server-side discount preview. Prices come from the API from item ids and
+ * quantities only; unknown codes only ever return a generic reason.
+ */
+export async function previewDiscount(
+  items: CartValidateItem[],
+  discountCode: string,
+  visitorIp?: string | null,
+): Promise<DiscountPreviewResult> {
+  const url = `${apiUrl()}/api/public/discount/preview`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...requestHeaders(visitorIp),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        items,
+        discount_code: discountCode,
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+    const parsed: unknown = await response.json().catch(() => null);
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return { ok: false, status: response.status, data: null };
+    }
+
+    const candidate = parsed as Record<string, unknown>;
+
+    if (candidate.valid === true) {
+      if (
+        typeof candidate.discount_cents === "number" &&
+        typeof candidate.subtotal_cents === "number" &&
+        typeof candidate.code === "string"
+      ) {
+        return {
+          ok: true,
+          status: response.status,
+          data: {
+            valid: true,
+            code: candidate.code,
+            discount_cents: candidate.discount_cents,
+            subtotal_cents: candidate.subtotal_cents,
+          },
+        };
+      }
+
+      return { ok: false, status: response.status, data: null };
+    }
+
+    if (candidate.valid === false && typeof candidate.error === "string") {
+      return {
+        ok: response.status < 500,
+        status: response.status,
+        data: { valid: false, error: candidate.error },
+      };
+    }
+
+    return { ok: false, status: response.status, data: null };
+  } catch {
+    return { ok: false, status: 502, data: null };
   }
 }
 

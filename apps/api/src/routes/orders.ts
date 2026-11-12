@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import {
@@ -458,6 +458,74 @@ ordersRouter.post(
       res.status(500).json({
         error: "We could not create your order. Please try again.",
       });
+    }
+  },
+);
+
+ordersRouter.get(
+  "/orders",
+  requireCustomer,
+  async (req: Request, res: Response) => {
+    const parsed = z
+      .object({
+        page: z.coerce.number().int().min(1).default(1),
+        page_size: z.coerce.number().int().min(1).max(50).default(10),
+      })
+      .safeParse(req.query);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    const { page, page_size: pageSize } = parsed.data;
+    const offset = (page - 1) * pageSize;
+
+    try {
+      const [rows, totalRows] = await Promise.all([
+        db
+          .select({
+            orderNumber: orders.orderNumber,
+            createdAt: orders.createdAt,
+            totalCents: orders.totalCents,
+            status: orders.status,
+          })
+          .from(orders)
+          .where(eq(orders.customerId, req.customer!.id))
+          .orderBy(desc(orders.createdAt))
+          .limit(pageSize)
+          .offset(offset),
+        db
+          .select({ value: count() })
+          .from(orders)
+          .where(eq(orders.customerId, req.customer!.id)),
+      ]);
+      const total = Number(totalRows[0]?.value ?? 0);
+
+      res.set("Cache-Control", "no-store");
+      res.json({
+        orders: rows.map((row) => ({
+          order_number: row.orderNumber,
+          created_at: row.createdAt,
+          total_cents: row.totalCents,
+          status: row.status,
+        })),
+        page,
+        page_size: pageSize,
+        total,
+        has_more: offset + rows.length < total,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to list customer orders:",
+        error instanceof Error ? error.message : error,
+      );
+      res.status(500).json({ error: "We could not load your orders." });
     }
   },
 );

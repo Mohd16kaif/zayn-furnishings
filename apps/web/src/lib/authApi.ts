@@ -45,6 +45,7 @@ export async function callApi(
     token?: string | null;
     visitorIp?: string | null;
     body?: unknown;
+    timeoutMs?: number;
   } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
@@ -65,7 +66,7 @@ export async function callApi(
     body:
       options.body === undefined ? undefined : JSON.stringify(options.body),
     cache: "no-store",
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: AbortSignal.timeout(options.timeoutMs ?? API_TIMEOUT_MS),
   });
 }
 
@@ -83,6 +84,7 @@ export async function callApiWithSession(
     method?: "GET" | "POST";
     visitorIp?: string | null;
     body?: unknown;
+    timeoutMs?: number;
   } = {},
 ): Promise<{ response: Response | null; authenticated: boolean }> {
   const token = await getSessionToken();

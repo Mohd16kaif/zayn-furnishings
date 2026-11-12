@@ -605,20 +605,34 @@ export function CartPageClient({ categories }: CartPageClientProps) {
             </div>
 
             <div className="zf-cart-summary__actions">
-              {/* TODO(checkout): enable once the checkout flow ships. */}
-              <button
-                type="button"
-                className="zf-btn zf-btn--primary zf-cart-summary__checkout"
-                disabled
-                aria-describedby="checkout-helper"
-              >
-                Proceed to checkout
-              </button>
+              {unavailableCount === 0 && current ? (
+                <Link
+                  className="zf-btn zf-btn--primary zf-cart-summary__checkout"
+                  href="/checkout"
+                >
+                  Proceed to checkout
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="zf-btn zf-btn--primary zf-cart-summary__checkout"
+                  disabled
+                  aria-describedby="checkout-helper"
+                >
+                  Proceed to checkout
+                </button>
+              )}
               <p
                 id="checkout-helper"
                 className="zf-cart-summary__helper"
               >
-                Secure checkout opens soon
+                {validationError
+                  ? "We could not refresh your cart. Try again shortly."
+                  : pending
+                    ? "Checking availability…"
+                    : unavailableCount > 0
+                      ? "Remove unavailable items to continue to checkout."
+                      : "Secure checkout"}
               </p>
               <Link className="zf-cart-summary__continue" href="/">
                 Continue shopping
