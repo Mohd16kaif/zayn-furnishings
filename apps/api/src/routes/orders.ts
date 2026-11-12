@@ -410,7 +410,9 @@ ordersRouter.post(
         const createParams: CreatePaymentIntentParams = {
           amount: totals.totalCents,
           currency: "usd",
-          payment_method_types: ["card", "link"],
+          // Card only on purpose. Link adds bank and Klarna options.
+          // Re-enable only if the client asks.
+          payment_method_types: ["card"],
           metadata: {
             order_id: created.id,
             order_number: created.orderNumber,
