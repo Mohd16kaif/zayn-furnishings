@@ -17,6 +17,7 @@
     "admin:create-owner": "tsx src/scripts/createOwner.ts",
     "orders:cancel-stale": "tsx src/scripts/cancelStalePendingOrders.ts",
     "orders:reconcile": "tsx src/scripts/reconcilePendingOrders.ts",
+    "audit:test-data": "tsx src/scripts/auditTestData.ts",
     "test": "vitest run"
   },
   "dependencies": {
