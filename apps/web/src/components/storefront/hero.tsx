@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { useReducedMotion } from "motion/react";
@@ -19,7 +19,7 @@ export type HeroSlide = {
 };
 
 const PREVIEW_SLIDE: HeroSlide = {
-  eyebrow: "The Winter Collection Â· 2026",
+  eyebrow: "The Winter Collection · 2026",
   title: "Furniture made to be lived in.",
   subtitle:
     "Thoughtful silhouettes, honest materials, and a quiet sense of warmth. Designed for the way life actually unfolds at home.",

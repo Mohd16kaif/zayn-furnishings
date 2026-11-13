@@ -655,30 +655,36 @@ adminOrdersRouter.patch(
         let deliveryChanged = false;
 
         if (delivery) {
-          const nextDeliveryStatus = deliveryStatusForOrderStatus(to);
-          const nextDeliveredAt =
-            nextDeliveryStatus === "delivered"
-              ? (delivery.deliveredAt ?? now)
-              : null;
+          const nextDeliveryStatus = deliveryStatusForOrderStatus(to, {
+            hasScheduledDate: Boolean(delivery.scheduledDate),
+          });
 
           deliveryStatusBefore = delivery.status;
-          deliveryStatusAfter = nextDeliveryStatus;
 
-          if (
-            delivery.status !== nextDeliveryStatus ||
-            delivery.deliveredAt?.getTime() !==
-              nextDeliveredAt?.getTime()
-          ) {
-            deliveryChanged = true;
+          if (nextDeliveryStatus !== null) {
+            const nextDeliveredAt =
+              nextDeliveryStatus === "delivered"
+                ? (delivery.deliveredAt ?? now)
+                : null;
 
-            await tx
-              .update(deliveries)
-              .set({
-                status: nextDeliveryStatus,
-                deliveredAt: nextDeliveredAt,
-                updatedAt: now,
-              })
-              .where(eq(deliveries.id, delivery.id));
+            deliveryStatusAfter = nextDeliveryStatus;
+
+            if (
+              delivery.status !== nextDeliveryStatus ||
+              delivery.deliveredAt?.getTime() !==
+                nextDeliveredAt?.getTime()
+            ) {
+              deliveryChanged = true;
+
+              await tx
+                .update(deliveries)
+                .set({
+                  status: nextDeliveryStatus,
+                  deliveredAt: nextDeliveredAt,
+                  updatedAt: now,
+                })
+                .where(eq(deliveries.id, delivery.id));
+            }
           }
         }
 

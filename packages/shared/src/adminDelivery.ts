@@ -90,28 +90,31 @@ export function isDeliveryOrderBlocked(orderStatus: OrderStatus): boolean {
   return DELIVERY_BLOCKED_ORDER_STATUSES.has(orderStatus);
 }
 
-const ORDER_STATUS_TO_DELIVERY_STATUS: Record<
-  OrderStatus,
-  DeliveryStatus
-> = {
-  pending: "pending",
-  paid: "pending",
-  processing: "scheduled",
-  out_for_delivery: "out_for_delivery",
-  delivered: "delivered",
-  cancelled: "cancelled",
-  refunded: "cancelled",
-  partially_refunded: "cancelled",
-};
-
 /**
  * The closest delivery status for an order status. Used when an admin moves
- * only the order status so the deliveries row cannot drift.
+ * only the order status so the deliveries row cannot drift. Returns null when
+ * the delivery should be left alone, such as when a refund is recorded.
  */
 export function deliveryStatusForOrderStatus(
   orderStatus: OrderStatus,
-): DeliveryStatus {
-  return ORDER_STATUS_TO_DELIVERY_STATUS[orderStatus];
+  { hasScheduledDate }: { hasScheduledDate: boolean },
+): DeliveryStatus | null {
+  switch (orderStatus) {
+    case "pending":
+    case "paid":
+      return "pending";
+    case "processing":
+      return hasScheduledDate ? "scheduled" : "pending";
+    case "out_for_delivery":
+      return "out_for_delivery";
+    case "delivered":
+      return "delivered";
+    case "cancelled":
+      return "cancelled";
+    case "refunded":
+    case "partially_refunded":
+      return null;
+  }
 }
 
 export type DeliveryOrderSyncResult =

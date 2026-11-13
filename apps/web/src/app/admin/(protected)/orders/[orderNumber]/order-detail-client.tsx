@@ -582,7 +582,7 @@ export function OrderDetailClient({
   const deliverySummary = order.delivery
     ? `${deliveryStatusLabel(order.delivery.status)}${
         order.delivery.scheduled_date
-          ? ` Â· ${formatAdminDateOnly(order.delivery.scheduled_date)}`
+          ? ` · ${formatAdminDateOnly(order.delivery.scheduled_date)}`
           : ""
       }`
     : "No delivery";
@@ -1102,7 +1102,7 @@ export function OrderDetailClient({
                       </p>
                       <p className="mt-0.5 text-xs text-stone-500">
                         {formatAdminDateTime(activity.created_at)}
-                        {" Â· "}
+                        {" · "}
                         {activity.admin_email ?? "System"}
                       </p>
                       {summary ? (
@@ -1290,7 +1290,7 @@ export function OrderDetailClient({
                     </div>
                     <p className="mt-0.5 text-xs text-stone-500">
                       {paymentStatusLabel(payment.status)}
-                      {" Â· "}
+                      {" · "}
                       {formatAdminDateTime(payment.created_at)}
                     </p>
                   </li>

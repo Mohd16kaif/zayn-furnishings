@@ -56,27 +56,63 @@ function expectedSync(
   return { status: "advance", orderStatus: target };
 }
 
+const DELIVERY_STATUS_MATRIX: Record<
+  OrderStatus,
+  [DeliveryStatus | null, DeliveryStatus | null]
+> = {
+  pending: ["pending", "pending"],
+  paid: ["pending", "pending"],
+  processing: ["pending", "scheduled"],
+  out_for_delivery: ["out_for_delivery", "out_for_delivery"],
+  delivered: ["delivered", "delivered"],
+  cancelled: ["cancelled", "cancelled"],
+  refunded: [null, null],
+  partially_refunded: [null, null],
+};
+
 describe("deliveryStatusForOrderStatus", () => {
-  it("maps every order status to its closest delivery status", () => {
-    expect(deliveryStatusForOrderStatus("pending")).toBe("pending");
-    expect(deliveryStatusForOrderStatus("paid")).toBe("pending");
-    expect(deliveryStatusForOrderStatus("processing")).toBe("scheduled");
-    expect(deliveryStatusForOrderStatus("out_for_delivery")).toBe(
-      "out_for_delivery",
-    );
-    expect(deliveryStatusForOrderStatus("delivered")).toBe("delivered");
-    expect(deliveryStatusForOrderStatus("cancelled")).toBe("cancelled");
-    expect(deliveryStatusForOrderStatus("refunded")).toBe("cancelled");
-    expect(deliveryStatusForOrderStatus("partially_refunded")).toBe(
-      "cancelled",
-    );
+  for (const orderStatus of ORDER_STATUSES) {
+    for (const hasScheduledDate of [false, true]) {
+      it(`${orderStatus} with ${hasScheduledDate ? "a" : "no"} scheduled date`, () => {
+        expect(
+          deliveryStatusForOrderStatus(orderStatus, {
+            hasScheduledDate,
+          }),
+        ).toBe(
+          DELIVERY_STATUS_MATRIX[orderStatus][
+            hasScheduledDate ? 1 : 0
+          ],
+        );
+      });
+    }
+  }
+
+  it("leaves the delivery alone for refund states", () => {
+    for (const orderStatus of [
+      "refunded",
+      "partially_refunded",
+    ] as const) {
+      for (const hasScheduledDate of [false, true]) {
+        expect(
+          deliveryStatusForOrderStatus(orderStatus, {
+            hasScheduledDate,
+          }),
+        ).toBeNull();
+      }
+    }
   });
 
-  it("only returns values from the delivery status enum", () => {
+  it("only returns delivery statuses from the enum or null", () => {
     for (const orderStatus of ORDER_STATUSES) {
-      expect(DELIVERY_STATUSES).toContain(
-        deliveryStatusForOrderStatus(orderStatus),
-      );
+      for (const hasScheduledDate of [false, true]) {
+        const result = deliveryStatusForOrderStatus(orderStatus, {
+          hasScheduledDate,
+        });
+
+        if (result !== null) {
+          expect(DELIVERY_STATUSES).toContain(result);
+        }
+      }
     }
   });
 });

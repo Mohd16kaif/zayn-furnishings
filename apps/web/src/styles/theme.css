@@ -1,4 +1,4 @@
-/* Zayn Furnishings â€” design preview theme
+/* Zayn Furnishings — design preview theme
    Scoped to .zf so the admin and the rest of the app are untouched. */
 
 html:has(.zf) {
