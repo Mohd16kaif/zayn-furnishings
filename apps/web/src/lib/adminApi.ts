@@ -1,3 +1,4 @@
+import type { OrderStatus } from "@zayn/shared";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -120,6 +121,103 @@ export type ProductListResponse = {
   total: number;
   page: number;
   page_size: number;
+};
+
+export type AdminOrderStatus = OrderStatus;
+
+export type AdminOrderListItem = {
+  order_number: string;
+  status: AdminOrderStatus;
+  total_cents: number;
+  created_at: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  item_count: number;
+  delivery_status: string | null;
+  has_stock_shortage: boolean;
+};
+
+export type AdminOrderListResponse = {
+  items: AdminOrderListItem[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+    has_more: boolean;
+  };
+  counts_by_status: Record<AdminOrderStatus, number>;
+};
+
+export type AdminOrderItem = {
+  name: string;
+  sku: string | null;
+  image_url: string | null;
+  unit_price_cents: number;
+  quantity: number;
+  line_total_cents: number;
+};
+
+export type AdminOrderPayment = {
+  provider: string;
+  status: string;
+  amount_cents: number;
+  created_at: string;
+};
+
+export type AdminOrderDelivery = {
+  status: string;
+  method: string | null;
+  scheduled_date: string | null;
+  time_window: string | null;
+  tracking_number: string | null;
+  carrier: string | null;
+  driver_notes: string | null;
+  delivered_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminOrderActivity = {
+  action: string;
+  admin_email: string | null;
+  created_at: string;
+  details: unknown;
+};
+
+export type AdminOrderDetail = {
+  order_number: string;
+  status: AdminOrderStatus;
+  created_at: string;
+  updated_at: string;
+  subtotal_cents: number;
+  discount_cents: number;
+  delivery_fee_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  discount_code: string | null;
+  customer: {
+    name: string | null;
+    phone: string | null;
+    receipt_email: string;
+    sms_opt_in: boolean;
+  };
+  shipping_address: {
+    name: string | null;
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    zip: string | null;
+    phone: string | null;
+  };
+  items: AdminOrderItem[];
+  payments: AdminOrderPayment[];
+  stripe_payment_intent_id: string | null;
+  delivery: AdminOrderDelivery | null;
+  notes: string | null;
+  has_stock_shortage: boolean;
+  activity: AdminOrderActivity[];
 };
 
 export class AdminApiError extends Error {
