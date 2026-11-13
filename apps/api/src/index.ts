@@ -7,6 +7,7 @@ import { adminAuthRouter } from "./routes/adminAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
 import { adminContentRouter } from "./routes/adminContent";
 import { adminDeliveryZonesRouter } from "./routes/adminDeliveryZones";
+import { adminOrdersRouter } from "./routes/adminOrders";
 import { adminProductsRouter } from "./routes/adminProducts";
 import { adminSettingsRouter } from "./routes/adminSettings";
 import { activePhoneVerifierName } from "./lib/phoneVerifier";
@@ -48,6 +49,7 @@ app.use("/admin", adminCategoriesRouter);
 app.use("/admin", adminContentRouter);
 app.use("/admin", adminSettingsRouter);
 app.use("/admin", adminDeliveryZonesRouter);
+app.use("/admin", adminOrdersRouter);
 app.use("/admin", adminProductsRouter);
 
 console.log(`Phone verifier: ${activePhoneVerifierName}`);
