@@ -21,6 +21,7 @@ import {
   type Product,
 } from "../db/schema";
 import { sendValidationError } from "../lib/adminCatalog";
+import { serializeCustomerDelivery } from "../lib/customerOrderSerialization";
 import { requireCustomer } from "../lib/customerAuth";
 import { computeDeliveryQuote } from "../lib/deliveryPricing";
 import { primaryImagesByProduct } from "../lib/productImages";
@@ -644,14 +645,7 @@ ordersRouter.get(
         },
         delivery_status: delivery?.status ?? null,
         delivery: delivery
-          ? {
-              status: delivery.status,
-              method: delivery.method,
-              scheduled_date: delivery.scheduledDate,
-              time_window: delivery.timeWindow,
-              tracking_number: delivery.trackingNumber,
-              carrier: delivery.carrier,
-            }
+          ? serializeCustomerDelivery(delivery)
           : null,
         items: items.map((item) => ({
           product_id: item.productId,

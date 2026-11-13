@@ -306,6 +306,9 @@ importers:
       libphonenumber-js:
         specifier: ^1.13.16
         version: 1.13.16
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       typescript:
         specifier: ^5

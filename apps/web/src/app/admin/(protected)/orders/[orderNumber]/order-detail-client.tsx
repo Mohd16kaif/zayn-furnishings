@@ -1,6 +1,6 @@
 "use client";
 
-import { canTransition } from "@zayn/shared";
+import { canTransition, isDeliveryOrderBlocked } from "@zayn/shared";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,11 +24,9 @@ import {
   type AdminOrderStatus,
 } from "@/lib/adminApi";
 import {
-  deliveryMethodLabel,
   deliveryStatusLabel,
   describeOrderActivity,
   formatAdminDate,
-  formatAdminDateOnly,
   formatAdminDateTime,
   orderActivityLabel,
   orderStatusBadgeClass,
@@ -53,6 +51,48 @@ const FULFILLMENT_FLOW: AdminOrderStatus[] = [
   "out_for_delivery",
   "delivered",
 ];
+
+const DELIVERY_METHOD_OPTIONS = [
+  { value: "own_truck", label: "Our own truck" },
+  { value: "freight", label: "Freight carrier" },
+  { value: "white_glove", label: "White-glove delivery" },
+  { value: "pickup", label: "Customer pickup" },
+  {
+    value: "carrier_parcel",
+    label: "Parcel carrier (UPS, FedEx, USPS)",
+  },
+] as const;
+
+const TIME_WINDOW_OPTIONS = [
+  "Morning (8am to 12pm)",
+  "Afternoon (12pm to 4pm)",
+  "Evening (4pm to 8pm)",
+  "All day",
+];
+
+type DeliveryFormState = {
+  method: string;
+  partnerName: string;
+  tracking: string;
+  scheduledDate: string;
+  timeWindow: string;
+  driverNotes: string;
+};
+
+type DeliveryActionStatus = "out_for_delivery" | "delivered";
+
+function deliveryFormFromOrder(
+  order: AdminOrderDetail,
+): DeliveryFormState {
+  return {
+    method: order.delivery?.method ?? "",
+    partnerName: order.delivery?.partner_name ?? "",
+    tracking: order.delivery?.tracking_number ?? "",
+    scheduledDate: order.delivery?.scheduled_date ?? "",
+    timeWindow: order.delivery?.time_window ?? "",
+    driverNotes: order.delivery?.driver_notes ?? "",
+  };
+}
 
 function statusActionLabel(
   target: AdminOrderStatus,
@@ -191,6 +231,18 @@ export function OrderDetailClient({
   const [savingStatus, setSavingStatus] = useState(false);
   const [confirmTarget, setConfirmTarget] =
     useState<AdminOrderStatus | null>(null);
+  const [deliveryForm, setDeliveryForm] = useState<DeliveryFormState>({
+    method: "",
+    partnerName: "",
+    tracking: "",
+    scheduledDate: "",
+    timeWindow: "",
+    driverNotes: "",
+  });
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliveryError, setDeliveryError] = useState("");
+  const [deliveryConfirmStatus, setDeliveryConfirmStatus] =
+    useState<DeliveryActionStatus | null>(null);
 
   const load = useCallback(
     async (options: { quiet?: boolean } = {}) => {
@@ -210,6 +262,7 @@ export function OrderDetailClient({
         ]);
 
         setOrder(orderData);
+        setDeliveryForm(deliveryFormFromOrder(orderData));
         setRole(me.role);
         setError("");
         setLoadStatus("ready");
@@ -287,6 +340,70 @@ export function OrderDetailClient({
       }
     } finally {
       setSavingStatus(false);
+    }
+  }
+
+  async function saveDelivery(targetStatus?: DeliveryActionStatus) {
+    setDeliveryConfirmStatus(null);
+    setDeliveryError("");
+
+    if (!deliveryForm.method) {
+      setDeliveryError(
+        "Choose a delivery method before saving the delivery.",
+      );
+      return;
+    }
+
+    setSavingDelivery(true);
+
+    try {
+      await adminFetch(
+        `/admin/orders/${encodeURIComponent(orderNumber)}/delivery`,
+        {
+          method: "PATCH",
+          json: {
+            method: deliveryForm.method,
+            partner_name: deliveryForm.partnerName.trim() || null,
+            tracking: deliveryForm.tracking.trim() || null,
+            scheduled_date: deliveryForm.scheduledDate || null,
+            time_window: deliveryForm.timeWindow || null,
+            driver_notes: deliveryForm.driverNotes.trim() || null,
+            status:
+              targetStatus ?? order?.delivery?.status ?? "pending",
+          },
+        },
+      );
+
+      showToast(
+        "success",
+        targetStatus === "out_for_delivery"
+          ? "Delivery marked out for delivery."
+          : targetStatus === "delivered"
+            ? "Delivery marked delivered."
+            : "Delivery details saved.",
+      );
+      await load({ quiet: true });
+      notifyOrdersChanged();
+      router.refresh();
+    } catch (saveError) {
+      const message = friendlyApiError(
+        saveError,
+        "Unable to save the delivery details.",
+        "You do not have permission to update the delivery.",
+      );
+
+      setDeliveryError(message);
+      showToast("error", message);
+
+      if (
+        saveError instanceof AdminApiError &&
+        saveError.status === 409
+      ) {
+        await load({ quiet: true });
+      }
+    } finally {
+      setSavingDelivery(false);
+      setDeliveryConfirmStatus(null);
     }
   }
 
@@ -392,6 +509,20 @@ export function OrderDetailClient({
   const canCancel = role
     ? canTransition(order.status, "cancelled", role)
     : false;
+  const deliveryBlocked = isDeliveryOrderBlocked(order.status);
+  const deliveryAvailable = !deliveryBlocked && order.delivery !== null;
+  const deliveryStatus = order.delivery?.status ?? "pending";
+  const canMarkOutForDelivery =
+    deliveryAvailable &&
+    deliveryStatus !== "out_for_delivery" &&
+    deliveryStatus !== "delivered";
+  const canMarkDelivered =
+    deliveryAvailable && deliveryStatus !== "delivered";
+  const timeWindowOptions =
+    deliveryForm.timeWindow &&
+    !TIME_WINDOW_OPTIONS.includes(deliveryForm.timeWindow)
+      ? [deliveryForm.timeWindow, ...TIME_WINDOW_OPTIONS]
+      : TIME_WINDOW_OPTIONS;
 
   return (
     <div>
@@ -796,46 +927,221 @@ export function OrderDetailClient({
           </Section>
 
           <Section title="Delivery">
-            {order.delivery ? (
-              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field label="Status">
-                  {deliveryStatusLabel(order.delivery.status)}
-                </Field>
-                <Field label="Method">
-                  {deliveryMethodLabel(order.delivery.method)}
-                </Field>
-                <Field label="Scheduled">
-                  {order.delivery.scheduled_date
-                    ? formatAdminDateOnly(
-                        order.delivery.scheduled_date,
-                      )
-                    : "Not scheduled"}
-                </Field>
-                <Field label="Time window">
-                  {order.delivery.time_window ?? "Not set"}
-                </Field>
-                <Field label="Carrier">
-                  {order.delivery.carrier ?? "Not set"}
-                </Field>
-                <Field label="Tracking number">
-                  {order.delivery.tracking_number ?? "Not set"}
-                </Field>
-                <Field label="Delivered">
-                  {order.delivery.delivered_at
-                    ? formatAdminDateTime(order.delivery.delivered_at)
-                    : "Not delivered"}
-                </Field>
-                <div className="sm:col-span-2">
-                  <Field label="Driver notes">
-                    {order.delivery.driver_notes ?? "None"}
-                  </Field>
-                </div>
-              </dl>
+            {!deliveryAvailable ? (
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
+                {deliveryBlocked
+                  ? "Delivery can be managed after payment."
+                  : "Delivery details are not available yet. Refresh the order and try again."}
+              </p>
             ) : (
               <p className="mt-3 text-sm text-stone-500">
-                No delivery details yet.
+                Current delivery status:{" "}
+                {deliveryStatusLabel(deliveryStatus)}
               </p>
             )}
+
+            <fieldset
+              disabled={!deliveryAvailable || savingDelivery}
+              className="mt-4 space-y-4 disabled:opacity-60"
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="delivery-method"
+                    className="block text-sm font-medium text-stone-800"
+                  >
+                    Delivery method
+                  </label>
+                  <select
+                    id="delivery-method"
+                    value={deliveryForm.method}
+                    onChange={(event) =>
+                      setDeliveryForm((current) => ({
+                        ...current,
+                        method: event.target.value,
+                      }))
+                    }
+                    className={`${inputClass} mt-1`}
+                  >
+                    <option value="">Choose a method</option>
+                    {DELIVERY_METHOD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="delivery-partner"
+                    className="block text-sm font-medium text-stone-800"
+                  >
+                    Delivery company
+                  </label>
+                  <input
+                    id="delivery-partner"
+                    type="text"
+                    maxLength={120}
+                    value={deliveryForm.partnerName}
+                    onChange={(event) =>
+                      setDeliveryForm((current) => ({
+                        ...current,
+                        partnerName: event.target.value,
+                      }))
+                    }
+                    placeholder="e.g. UPS, FedEx, or a local partner"
+                    className={`${inputClass} mt-1`}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="delivery-tracking"
+                    className="block text-sm font-medium text-stone-800"
+                  >
+                    Tracking number
+                  </label>
+                  <input
+                    id="delivery-tracking"
+                    type="text"
+                    maxLength={120}
+                    value={deliveryForm.tracking}
+                    onChange={(event) =>
+                      setDeliveryForm((current) => ({
+                        ...current,
+                        tracking: event.target.value,
+                      }))
+                    }
+                    className={`${inputClass} mt-1`}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="delivery-date"
+                    className="block text-sm font-medium text-stone-800"
+                  >
+                    Delivery date
+                  </label>
+                  <input
+                    id="delivery-date"
+                    type="date"
+                    value={deliveryForm.scheduledDate}
+                    onChange={(event) =>
+                      setDeliveryForm((current) => ({
+                        ...current,
+                        scheduledDate: event.target.value,
+                      }))
+                    }
+                    className={`${inputClass} mt-1`}
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label
+                    htmlFor="delivery-time-window"
+                    className="block text-sm font-medium text-stone-800"
+                  >
+                    Time window
+                  </label>
+                  <select
+                    id="delivery-time-window"
+                    value={deliveryForm.timeWindow}
+                    onChange={(event) =>
+                      setDeliveryForm((current) => ({
+                        ...current,
+                        timeWindow: event.target.value,
+                      }))
+                    }
+                    className={`${inputClass} mt-1`}
+                  >
+                    <option value="">Not set</option>
+                    {timeWindowOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="delivery-driver-notes"
+                  className="block text-sm font-medium text-stone-800"
+                >
+                  Driver notes
+                </label>
+                <p className="mt-0.5 text-xs leading-5 text-stone-500">
+                  Private notes for the delivery team. Customers do not see
+                  this.
+                </p>
+                <textarea
+                  id="delivery-driver-notes"
+                  rows={3}
+                  maxLength={1000}
+                  value={deliveryForm.driverNotes}
+                  onChange={(event) =>
+                    setDeliveryForm((current) => ({
+                      ...current,
+                      driverNotes: event.target.value,
+                    }))
+                  }
+                  className={`${inputClass} mt-1`}
+                />
+              </div>
+
+              {deliveryError ? (
+                <p role="alert" className="text-sm text-red-700">
+                  {deliveryError}
+                </p>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveDelivery()}
+                  disabled={savingDelivery || !deliveryForm.method}
+                  className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {savingDelivery ? "Saving..." : "Save delivery"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDeliveryConfirmStatus("out_for_delivery")
+                  }
+                  disabled={
+                    savingDelivery ||
+                    !deliveryForm.method ||
+                    !canMarkOutForDelivery
+                  }
+                  className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Mark out for delivery
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeliveryConfirmStatus("delivered")}
+                  disabled={
+                    savingDelivery ||
+                    !deliveryForm.method ||
+                    !canMarkDelivered
+                  }
+                  className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Mark delivered
+                </button>
+              </div>
+
+              {deliveryAvailable && !deliveryForm.method ? (
+                <p className="text-xs text-stone-500">
+                  Choose a delivery method before saving or updating the
+                  delivery.
+                </p>
+              ) : null}
+            </fieldset>
           </Section>
         </aside>
       </div>
@@ -870,6 +1176,36 @@ export function OrderDetailClient({
         onConfirm={() => {
           if (confirmTarget) {
             void changeStatus(confirmTarget);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={deliveryConfirmStatus !== null}
+        title={
+          deliveryConfirmStatus === "delivered"
+            ? "Mark delivered?"
+            : "Mark out for delivery?"
+        }
+        description={
+          deliveryConfirmStatus === "delivered"
+            ? "This saves the delivery details and marks the delivery delivered. It also updates the order status when possible."
+            : "This saves the delivery details and marks the delivery out for delivery. It also updates the order status when possible."
+        }
+        confirmLabel={
+          deliveryConfirmStatus === "delivered"
+            ? "Mark delivered"
+            : "Mark out for delivery"
+        }
+        busy={savingDelivery}
+        onCancel={() => {
+          if (!savingDelivery) {
+            setDeliveryConfirmStatus(null);
+          }
+        }}
+        onConfirm={() => {
+          if (deliveryConfirmStatus) {
+            void saveDelivery(deliveryConfirmStatus);
           }
         }}
       />

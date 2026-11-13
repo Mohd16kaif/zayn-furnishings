@@ -25,6 +25,7 @@ export const deliveries = pgTable(
       .references(() => orders.id, { onDelete: "cascade" }),
     method: deliveryMethodEnum("method"),
     status: deliveryStatusEnum("status").default("pending").notNull(),
+    partnerName: text("partner_name"),
     scheduledDate: date("scheduled_date"),
     timeWindow: text("time_window"),
     trackingNumber: text("tracking_number"),

@@ -168,6 +168,7 @@ export type AdminOrderPayment = {
 export type AdminOrderDelivery = {
   status: string;
   method: string | null;
+  partner_name: string | null;
   scheduled_date: string | null;
   time_window: string | null;
   tracking_number: string | null;

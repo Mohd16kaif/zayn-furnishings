@@ -1,7 +1,10 @@
 import {
   ORDER_STATUSES,
   canTransition,
+  deliveryOrderSync,
+  deliveryUpdateSchema,
   isBackwardFulfillmentTransition,
+  isDeliveryOrderBlocked,
   isManualStatusBlocked,
   type OrderStatus,
 } from "@zayn/shared";
@@ -249,6 +252,7 @@ function serializeDelivery(delivery: typeof deliveries.$inferSelect) {
   return {
     status: delivery.status,
     method: delivery.method,
+    partner_name: delivery.partnerName,
     scheduled_date: delivery.scheduledDate,
     time_window: delivery.timeWindow,
     tracking_number: delivery.trackingNumber,
@@ -663,6 +667,209 @@ adminOrdersRouter.patch(
       res.json(result);
     } catch (error) {
       sendError(res, error, "Failed to update order status");
+    }
+  },
+);
+
+adminOrdersRouter.patch(
+  "/orders/:orderNumber/delivery",
+  async (req: Request, res: Response) => {
+    const orderNumber = readOrderNumber(req, res);
+
+    if (!orderNumber) {
+      return;
+    }
+
+    const parsed = deliveryUpdateSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    const admin = req.admin!;
+    const data = parsed.data;
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [order] = await tx
+          .select()
+          .from(orders)
+          .where(eq(orders.orderNumber, orderNumber))
+          .limit(1)
+          .for("update");
+
+        if (!order) {
+          throw new HttpError(404, "Order not found.");
+        }
+
+        if (isDeliveryOrderBlocked(order.status)) {
+          throw new HttpError(409, "Delivery can be managed after payment");
+        }
+
+        const today = new Date().toISOString().slice(0, 10);
+
+        if (
+          data.scheduled_date &&
+          data.scheduled_date < today &&
+          data.status !== "delivered"
+        ) {
+          throw new HttpError(
+            400,
+            "A delivery date in the past can only be saved when the delivery is marked delivered.",
+          );
+        }
+
+        const [delivery] = await tx
+          .select()
+          .from(deliveries)
+          .where(eq(deliveries.orderId, order.id))
+          .limit(1)
+          .for("update");
+
+        if (!delivery) {
+          throw new HttpError(
+            409,
+            "Delivery details are not available yet. Refresh the order and try again.",
+          );
+        }
+
+        const now = new Date();
+        const next = {
+          method: data.method,
+          partnerName:
+            data.partner_name === undefined
+              ? delivery.partnerName
+              : data.partner_name,
+          trackingNumber:
+            data.tracking === undefined
+              ? delivery.trackingNumber
+              : data.tracking,
+          scheduledDate:
+            data.scheduled_date === undefined
+              ? delivery.scheduledDate
+              : data.scheduled_date,
+          timeWindow:
+            data.time_window === undefined
+              ? delivery.timeWindow
+              : data.time_window,
+          driverNotes:
+            data.driver_notes === undefined
+              ? delivery.driverNotes
+              : data.driver_notes,
+          status: data.status,
+          deliveredAt:
+            data.status === "delivered"
+              ? (delivery.deliveredAt ?? now)
+              : delivery.deliveredAt,
+        };
+        const before: Record<string, unknown> = {};
+        const after: Record<string, unknown> = {};
+        const changedFields: string[] = [];
+
+        function record(
+          field: string,
+          beforeValue: unknown,
+          afterValue: unknown,
+        ) {
+          if (beforeValue !== afterValue) {
+            changedFields.push(field);
+            before[field] = beforeValue;
+            after[field] = afterValue;
+          }
+        }
+
+        record("method", delivery.method, next.method);
+        record("partner_name", delivery.partnerName, next.partnerName);
+        record(
+          "tracking_number",
+          delivery.trackingNumber,
+          next.trackingNumber,
+        );
+        record(
+          "scheduled_date",
+          delivery.scheduledDate,
+          next.scheduledDate,
+        );
+        record("time_window", delivery.timeWindow, next.timeWindow);
+        record("status", delivery.status, next.status);
+        record("delivered_at", delivery.deliveredAt, next.deliveredAt);
+
+        const driverNotesChanged =
+          delivery.driverNotes !== next.driverNotes;
+
+        if (driverNotesChanged) {
+          changedFields.push("driver_notes");
+        }
+
+        const deliveryStatusChanged = delivery.status !== next.status;
+        const sync = deliveryStatusChanged
+          ? deliveryOrderSync(next.status, order.status, admin.role)
+          : ({ status: "no_change" } as const);
+
+        if (sync.status === "error") {
+          throw new HttpError(
+            409,
+            sync.reason === "delivery_unavailable"
+              ? "Delivery can be managed after payment"
+              : "This delivery status cannot be saved for the current order. Refresh the order and try again.",
+          );
+        }
+
+        const [updatedDelivery] = await tx
+          .update(deliveries)
+          .set({ ...next, updatedAt: now })
+          .where(eq(deliveries.id, delivery.id))
+          .returning();
+
+        if (!updatedDelivery) {
+          throw new HttpError(
+            500,
+            "The delivery could not be saved. Please try again.",
+          );
+        }
+
+        let orderStatus = order.status;
+
+        if (sync.status === "advance") {
+          await tx
+            .update(orders)
+            .set({ status: sync.orderStatus, updatedAt: now })
+            .where(eq(orders.id, order.id));
+          orderStatus = sync.orderStatus;
+        }
+
+        await writeAudit(tx, {
+          adminUserId: admin.id,
+          action: "order.delivery_updated",
+          entity: "order",
+          entityId: order.id,
+          details: {
+            order_number: order.orderNumber,
+            changed_fields: changedFields,
+            before,
+            after,
+            driver_notes_changed: driverNotesChanged,
+            order_status_before: order.status,
+            order_status_after: orderStatus,
+          },
+        });
+
+        return {
+          order_number: order.orderNumber,
+          status: orderStatus,
+          delivery: serializeDelivery(updatedDelivery),
+        };
+      });
+
+      res.json(result);
+    } catch (error) {
+      sendError(res, error, "Failed to update delivery");
     }
   },
 );

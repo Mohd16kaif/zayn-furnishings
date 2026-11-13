@@ -7,6 +7,7 @@ export * from "./zipCoverage";
 export * from "./zipState";
 export * from "./content";
 export * from "./orderTransitions";
+export * from "./adminDelivery";
 
 export const API_NAME = "zayn-furnishings-api";
 

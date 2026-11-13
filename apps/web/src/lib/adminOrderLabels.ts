@@ -112,6 +112,8 @@ export function orderActivityLabel(action: string): string {
       return "Note added";
     case "order.stock_shortage":
       return "Stock shortage flagged";
+    case "order.delivery_updated":
+      return "Delivery updated";
     case "order.stale_pending_cancelled":
       return "Unpaid order cancelled automatically";
     default:
@@ -183,11 +185,66 @@ export function describeOrderActivity(activity: {
     return null;
   }
 
+  if (activity.action === "order.delivery_updated") {
+    const parts: string[] = [];
+    const orderBefore = details?.order_status_before;
+    const orderAfter = details?.order_status_after;
+
+    if (
+      typeof orderBefore === "string" &&
+      typeof orderAfter === "string" &&
+      orderBefore !== orderAfter
+    ) {
+      parts.push(
+        `Order status changed from ${orderStatusLabel(
+          orderBefore,
+        )} to ${orderStatusLabel(orderAfter)}.`,
+      );
+    }
+
+    const changedFields = details?.changed_fields;
+
+    if (Array.isArray(changedFields) && changedFields.length > 0) {
+      const labels = changedFields
+        .filter((field): field is string => typeof field === "string")
+        .map(deliveryFieldLabel);
+
+      if (labels.length > 0) {
+        parts.push(`Updated ${labels.join(", ")}.`);
+      }
+    }
+
+    return parts.length > 0 ? parts.join(" ") : null;
+  }
+
   if (activity.action === "order.stale_pending_cancelled") {
     return "The order was cancelled automatically because it stayed unpaid.";
   }
 
   return note;
+}
+
+function deliveryFieldLabel(field: string): string {
+  switch (field) {
+    case "method":
+      return "delivery method";
+    case "partner_name":
+      return "delivery company";
+    case "tracking_number":
+      return "tracking number";
+    case "scheduled_date":
+      return "delivery date";
+    case "time_window":
+      return "time window";
+    case "status":
+      return "delivery status";
+    case "delivered_at":
+      return "delivered date";
+    case "driver_notes":
+      return "driver notes";
+    default:
+      return formatWords(field);
+  }
 }
 
 export function formatAdminDateOnly(value: string): string {
