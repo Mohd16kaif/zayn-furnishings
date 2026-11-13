@@ -90,6 +90,30 @@ export function isDeliveryOrderBlocked(orderStatus: OrderStatus): boolean {
   return DELIVERY_BLOCKED_ORDER_STATUSES.has(orderStatus);
 }
 
+const ORDER_STATUS_TO_DELIVERY_STATUS: Record<
+  OrderStatus,
+  DeliveryStatus
+> = {
+  pending: "pending",
+  paid: "pending",
+  processing: "scheduled",
+  out_for_delivery: "out_for_delivery",
+  delivered: "delivered",
+  cancelled: "cancelled",
+  refunded: "cancelled",
+  partially_refunded: "cancelled",
+};
+
+/**
+ * The closest delivery status for an order status. Used when an admin moves
+ * only the order status so the deliveries row cannot drift.
+ */
+export function deliveryStatusForOrderStatus(
+  orderStatus: OrderStatus,
+): DeliveryStatus {
+  return ORDER_STATUS_TO_DELIVERY_STATUS[orderStatus];
+}
+
 export type DeliveryOrderSyncResult =
   | { status: "no_change" }
   | { status: "advance"; orderStatus: OrderStatus }

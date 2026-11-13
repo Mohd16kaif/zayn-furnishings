@@ -137,9 +137,25 @@ export function describeOrderActivity(activity: {
     const to = typeof details?.to === "string" ? details.to : null;
 
     if (from && to) {
+      const deliveryBefore =
+        typeof details?.delivery_status_before === "string"
+          ? details.delivery_status_before
+          : null;
+      const deliveryAfter =
+        typeof details?.delivery_status_after === "string"
+          ? details.delivery_status_after
+          : null;
+      const deliveryChanged = details?.delivery_changed === true;
+      const deliveryNote =
+        deliveryChanged && deliveryBefore && deliveryAfter
+          ? ` Delivery status changed from ${deliveryStatusLabel(
+              deliveryBefore,
+            )} to ${deliveryStatusLabel(deliveryAfter)}.`
+          : "";
+
       return `From ${orderStatusLabel(from)} to ${orderStatusLabel(to)}.${
         note ? ` ${note}` : ""
-      }`;
+      }${deliveryNote}`;
     }
 
     return note;

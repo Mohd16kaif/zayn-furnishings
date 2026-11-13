@@ -6033,6 +6033,28 @@ html[data-zf-theme="dark"] .zf .zf-form__error {
   font-size: 13px;
 }
 
+.zf-order__delivery-details {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.zf-order__delivery-details div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.zf-order__delivery-details dt {
+  color: var(--muted);
+}
+
+.zf-order__delivery-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .zf-order__address {
   display: grid;
   gap: 2px;

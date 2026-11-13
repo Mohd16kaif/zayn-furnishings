@@ -3,6 +3,7 @@ import {
   DELIVERY_METHODS,
   DELIVERY_STATUSES,
   deliveryOrderSync,
+  deliveryStatusForOrderStatus,
   deliveryUpdateSchema,
   type DeliveryOrderSyncResult,
   type DeliveryStatus,
@@ -54,6 +55,31 @@ function expectedSync(
 
   return { status: "advance", orderStatus: target };
 }
+
+describe("deliveryStatusForOrderStatus", () => {
+  it("maps every order status to its closest delivery status", () => {
+    expect(deliveryStatusForOrderStatus("pending")).toBe("pending");
+    expect(deliveryStatusForOrderStatus("paid")).toBe("pending");
+    expect(deliveryStatusForOrderStatus("processing")).toBe("scheduled");
+    expect(deliveryStatusForOrderStatus("out_for_delivery")).toBe(
+      "out_for_delivery",
+    );
+    expect(deliveryStatusForOrderStatus("delivered")).toBe("delivered");
+    expect(deliveryStatusForOrderStatus("cancelled")).toBe("cancelled");
+    expect(deliveryStatusForOrderStatus("refunded")).toBe("cancelled");
+    expect(deliveryStatusForOrderStatus("partially_refunded")).toBe(
+      "cancelled",
+    );
+  });
+
+  it("only returns values from the delivery status enum", () => {
+    for (const orderStatus of ORDER_STATUSES) {
+      expect(DELIVERY_STATUSES).toContain(
+        deliveryStatusForOrderStatus(orderStatus),
+      );
+    }
+  });
+});
 
 describe("deliveryOrderSync", () => {
   for (const role of ["owner", "staff"] as const) {

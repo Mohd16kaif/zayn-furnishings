@@ -2,6 +2,7 @@ import {
   ORDER_STATUSES,
   canTransition,
   deliveryOrderSync,
+  deliveryStatusForOrderStatus,
   deliveryUpdateSchema,
   isBackwardFulfillmentTransition,
   isDeliveryOrderBlocked,
@@ -643,6 +644,44 @@ adminOrdersRouter.patch(
           })
           .where(eq(orders.id, order.id));
 
+        const [delivery] = await tx
+          .select()
+          .from(deliveries)
+          .where(eq(deliveries.orderId, order.id))
+          .limit(1)
+          .for("update");
+        let deliveryStatusBefore: string | null = null;
+        let deliveryStatusAfter: string | null = null;
+        let deliveryChanged = false;
+
+        if (delivery) {
+          const nextDeliveryStatus = deliveryStatusForOrderStatus(to);
+          const nextDeliveredAt =
+            nextDeliveryStatus === "delivered"
+              ? (delivery.deliveredAt ?? now)
+              : null;
+
+          deliveryStatusBefore = delivery.status;
+          deliveryStatusAfter = nextDeliveryStatus;
+
+          if (
+            delivery.status !== nextDeliveryStatus ||
+            delivery.deliveredAt?.getTime() !==
+              nextDeliveredAt?.getTime()
+          ) {
+            deliveryChanged = true;
+
+            await tx
+              .update(deliveries)
+              .set({
+                status: nextDeliveryStatus,
+                deliveredAt: nextDeliveredAt,
+                updatedAt: now,
+              })
+              .where(eq(deliveries.id, delivery.id));
+          }
+        }
+
         await writeAudit(tx, {
           adminUserId: admin.id,
           action: "order.status_changed",
@@ -654,6 +693,9 @@ adminOrdersRouter.patch(
             to,
             note: data.note ?? null,
             payment_intent_cancelled: paymentIntentCancelled,
+            delivery_status_before: deliveryStatusBefore,
+            delivery_status_after: deliveryStatusAfter,
+            delivery_changed: deliveryChanged,
           },
         });
 

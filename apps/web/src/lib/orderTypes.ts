@@ -104,6 +104,63 @@ export function formatOrderStatus(status: string): string {
     .join(" ");
 }
 
+export function formatCustomerOrderStatus(status: string): string {
+  switch (status) {
+    case "pending":
+      return "Awaiting payment";
+    case "paid":
+      return "Order confirmed";
+    case "processing":
+      return "Being prepared";
+    case "out_for_delivery":
+      return "Out for delivery";
+    case "delivered":
+      return "Delivered";
+    case "cancelled":
+      return "Cancelled";
+    case "refunded":
+      return "Refunded";
+    case "partially_refunded":
+      return "Partially refunded";
+    default:
+      return formatOrderStatus(status);
+  }
+}
+
+export function formatDeliveryStatusSentence(status: string): string {
+  const words = status.replace(/[_-]+/g, " ").trim().toLowerCase();
+
+  if (!words) {
+    return "";
+  }
+
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export function formatDeliveryDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const date = match
+    ? new Date(
+        Date.UTC(
+          Number(match[1]),
+          Number(match[2]) - 1,
+          Number(match[3]),
+        ),
+      )
+    : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    ...(match ? { timeZone: "UTC" } : {}),
+  });
+}
+
 export function formatOrderDate(value: string): string {
   const date = new Date(value);
 

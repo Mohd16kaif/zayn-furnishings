@@ -5,8 +5,10 @@ import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/design/cart-provider";
 import { formatCents } from "@/lib/money";
 import {
+  formatCustomerOrderStatus,
+  formatDeliveryDate,
+  formatDeliveryStatusSentence,
   formatOrderDate,
-  formatOrderStatus,
   isCustomerOrderDetail,
   type CustomerOrderDetail,
 } from "@/lib/orderTypes";
@@ -139,6 +141,10 @@ export function OrderConfirmation({ initialOrder }: OrderConfirmationProps) {
 
   const paid = order.status === "paid";
   const address = addressLines(order);
+  const statusLabel = formatCustomerOrderStatus(order.status);
+  const deliveryStatus =
+    order.delivery?.status ?? order.delivery_status ?? null;
+  const delivery = order.delivery;
 
   return (
     <section className="zf-order">
@@ -157,9 +163,7 @@ export function OrderConfirmation({ initialOrder }: OrderConfirmationProps) {
 
         <div className="zf-order__head">
           <div>
-            <p className="zf-eyebrow">
-              {paid ? "Order confirmed" : "Order in progress"}
-            </p>
+            <p className="zf-eyebrow">{statusLabel}</p>
             <h1 className="zf-order__title">
               {paid ? "Thank you for your order." : "Your order"}
             </h1>
@@ -172,7 +176,7 @@ export function OrderConfirmation({ initialOrder }: OrderConfirmationProps) {
               paid ? " zf-order__status--paid" : ""
             }`}
           >
-            {formatOrderStatus(order.status)}
+            {statusLabel}
           </span>
         </div>
 
@@ -244,16 +248,44 @@ export function OrderConfirmation({ initialOrder }: OrderConfirmationProps) {
 
             <div className="zf-order__section">
               <h2>Delivery</h2>
-              <p className="zf-order__delivery-status">
-                Delivery status:{" "}
-                <strong>
-                  {formatOrderStatus(
-                    order.delivery_status ??
-                      order.delivery?.status ??
-                      "pending",
-                  )}
-                </strong>
-              </p>
+              {deliveryStatus ? (
+                <p className="zf-order__delivery-status">
+                  Delivery status:{" "}
+                  <strong>
+                    {formatDeliveryStatusSentence(deliveryStatus)}
+                  </strong>
+                </p>
+              ) : null}
+              {delivery ? (
+                <dl className="zf-order__delivery-details">
+                  {delivery.partner_name ? (
+                    <div>
+                      <dt>Delivery company</dt>
+                      <dd>{delivery.partner_name}</dd>
+                    </div>
+                  ) : null}
+                  {delivery.scheduled_date ? (
+                    <div>
+                      <dt>Scheduled</dt>
+                      <dd>
+                        {formatDeliveryDate(delivery.scheduled_date)}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {delivery.time_window ? (
+                    <div>
+                      <dt>Time window</dt>
+                      <dd>{delivery.time_window}</dd>
+                    </div>
+                  ) : null}
+                  {delivery.tracking_number ? (
+                    <div>
+                      <dt>Tracking number</dt>
+                      <dd>{delivery.tracking_number}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
               <address className="zf-order__address">
                 {address.map((line, index) => (
                   <span key={`${index}-${line}`}>{line}</span>

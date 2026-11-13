@@ -27,6 +27,7 @@ import {
   deliveryStatusLabel,
   describeOrderActivity,
   formatAdminDate,
+  formatAdminDateOnly,
   formatAdminDateTime,
   orderActivityLabel,
   orderStatusBadgeClass,
@@ -184,16 +185,73 @@ function StatusBadge({ status }: { status: AdminOrderStatus }) {
 function Section({
   title,
   children,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+    <section
+      className={`min-w-0 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6 ${className}`}
+    >
       <h2 className="text-lg font-semibold text-stone-900">{title}</h2>
       {children}
     </section>
   );
+}
+
+function phoneDigits(value: string | null): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function addressPhoneDiffers(
+  addressPhone: string | null,
+  customerPhone: string | null,
+): boolean {
+  if (!addressPhone) {
+    return false;
+  }
+
+  const customerDigits = phoneDigits(customerPhone);
+
+  if (!customerDigits) {
+    return true;
+  }
+
+  return phoneDigits(addressPhone) !== customerDigits;
+}
+
+function addressCityLine(
+  address: AdminOrderDetail["shipping_address"],
+): string {
+  const city = address.city?.trim();
+  const stateZip = [address.state?.trim(), address.zip?.trim()]
+    .filter(Boolean)
+    .join(" ");
+
+  return [city, stateZip].filter(Boolean).join(", ");
+}
+
+function paymentSummaryLabel(order: AdminOrderDetail): string {
+  if (
+    order.status === "refunded" ||
+    order.status === "partially_refunded"
+  ) {
+    return "Refunded";
+  }
+
+  if (order.status === "cancelled") {
+    return "Not charged";
+  }
+
+  if (order.status === "pending") {
+    return "Awaiting payment";
+  }
+
+  const latest = order.payments[order.payments.length - 1];
+
+  return latest ? paymentStatusLabel(latest.status) : "Paid";
 }
 
 function Field({
@@ -243,6 +301,7 @@ export function OrderDetailClient({
   const [deliveryError, setDeliveryError] = useState("");
   const [deliveryConfirmStatus, setDeliveryConfirmStatus] =
     useState<DeliveryActionStatus | null>(null);
+  const [showAllActivity, setShowAllActivity] = useState(false);
 
   const load = useCallback(
     async (options: { quiet?: boolean } = {}) => {
@@ -501,10 +560,18 @@ export function OrderDetailClient({
     );
   }
 
+  const currentStatusIndex = FULFILLMENT_FLOW.indexOf(order.status);
   const allowedTargets = role
-    ? STATUS_TARGETS.filter((target) =>
-        canTransition(order.status, target, role),
-      )
+    ? STATUS_TARGETS.filter((target) => {
+        if (!canTransition(order.status, target, role)) {
+          return false;
+        }
+
+        const targetIndex = FULFILLMENT_FLOW.indexOf(target);
+        const isForward = targetIndex > currentStatusIndex;
+
+        return !isForward || target === "processing";
+      })
     : [];
   const canCancel = role
     ? canTransition(order.status, "cancelled", role)
@@ -512,6 +579,18 @@ export function OrderDetailClient({
   const deliveryBlocked = isDeliveryOrderBlocked(order.status);
   const deliveryAvailable = !deliveryBlocked && order.delivery !== null;
   const deliveryStatus = order.delivery?.status ?? "pending";
+  const deliverySummary = order.delivery
+    ? `${deliveryStatusLabel(order.delivery.status)}${
+        order.delivery.scheduled_date
+          ? ` Â· ${formatAdminDateOnly(order.delivery.scheduled_date)}`
+          : ""
+      }`
+    : "No delivery";
+  const showDeliveryHint =
+    deliveryAvailable &&
+    (order.status === "paid" ||
+      order.status === "processing" ||
+      order.status === "out_for_delivery");
   const canMarkOutForDelivery =
     deliveryAvailable &&
     deliveryStatus !== "out_for_delivery" &&
@@ -523,37 +602,55 @@ export function OrderDetailClient({
     !TIME_WINDOW_OPTIONS.includes(deliveryForm.timeWindow)
       ? [deliveryForm.timeWindow, ...TIME_WINDOW_OPTIONS]
       : TIME_WINDOW_OPTIONS;
+  const visibleActivity = showAllActivity
+    ? order.activity
+    : order.activity.slice(0, 8);
+  const cityLine = addressCityLine(order.shipping_address);
 
   return (
     <div>
       <AdminToast toast={toast} onDismiss={dismissToast} />
 
-      <Link
-        href="/admin/orders"
-        className="text-sm font-medium text-stone-600 hover:text-stone-900"
-      >
-        ← Back to orders
-      </Link>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <nav
+            className="flex flex-wrap items-center gap-2 text-sm text-stone-500"
+            aria-label="Breadcrumb"
+          >
+            <Link
+              href="/admin/orders"
+              className="font-medium text-stone-600 hover:text-stone-900"
+            >
+              Orders
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span className="truncate">{order.order_number}</span>
+          </nav>
 
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-stone-400">
-            Order
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            {order.order_number}
-          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {order.order_number}
+            </h1>
+            <StatusBadge status={order.status} />
+          </div>
+
           <p className="mt-2 text-sm text-stone-600">
             Placed {formatAdminDate(order.created_at)}
           </p>
         </div>
-        <StatusBadge status={order.status} />
+
+        <Link
+          href="/admin/orders"
+          className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+        >
+          Back to orders
+        </Link>
       </div>
 
       {order.has_stock_shortage ? (
         <div
           role="alert"
-          className="mt-6 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"
+          className="mt-4 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"
         >
           <p className="font-semibold">
             Not enough stock when this was paid.
@@ -562,9 +659,47 @@ export function OrderDetailClient({
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="space-y-6">
-          <Section title="Items">
+      <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-stone-200 bg-stone-200 sm:grid-cols-4">
+        <div className="min-w-0 bg-white px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+            Total
+          </dt>
+          <dd className="mt-1 truncate text-sm font-semibold text-stone-900">
+            {formatCents(order.total_cents)}
+          </dd>
+        </div>
+        <div className="min-w-0 bg-white px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+            Payment status
+          </dt>
+          <dd className="mt-1 truncate text-sm font-semibold text-stone-900">
+            {paymentSummaryLabel(order)}
+          </dd>
+        </div>
+        <div className="min-w-0 bg-white px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+            Delivery status
+          </dt>
+          <dd className="mt-1 break-words text-sm font-semibold text-stone-900">
+            {deliverySummary}
+          </dd>
+        </div>
+        <div className="min-w-0 bg-white px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+            Customer
+          </dt>
+          <dd className="mt-1 truncate text-sm font-semibold text-stone-900">
+            {order.customer.name ?? "Guest"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-6 grid grid-cols-1 gap-5 min-[1100px]:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] min-[1100px]:items-start min-[1100px]:gap-6">
+        <div className="contents min-w-0 min-[1100px]:order-1 min-[1100px]:block min-[1100px]:space-y-5">
+          <Section
+            title="Items"
+            className="order-2 min-[1100px]:order-none"
+          >
             {order.items.length === 0 ? (
               <p className="mt-3 text-sm text-stone-500">
                 No items on this order.
@@ -593,12 +728,12 @@ export function OrderDetailClient({
                               <Image
                                 src={item.image_url}
                                 alt={item.name}
-                                width={48}
-                                height={48}
-                                className="h-12 w-12 shrink-0 rounded-lg border border-stone-200 object-cover"
+                                width={56}
+                                height={56}
+                                className="h-14 w-14 shrink-0 rounded-lg border border-stone-200 object-cover"
                               />
                             ) : (
-                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-stone-50 text-center text-[10px] leading-tight text-stone-400">
+                              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-stone-50 text-center text-[10px] leading-tight text-stone-400">
                                 No photo
                               </div>
                             )}
@@ -627,306 +762,54 @@ export function OrderDetailClient({
                 </table>
               </div>
             )}
-          </Section>
 
-          <Section title="Internal notes">
-            {order.notes ? (
-              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-stone-800">
-                {order.notes}
-              </p>
-            ) : (
-              <p className="mt-3 text-sm text-stone-500">
-                No internal notes yet.
-              </p>
-            )}
-          </Section>
-
-          <Section title="Add note">
-            <form onSubmit={addNote} className="mt-3">
-              <label
-                htmlFor="order-note"
-                className="block text-sm font-medium text-stone-800"
-              >
-                Note for the team
-              </label>
-              <textarea
-                id="order-note"
-                rows={4}
-                maxLength={1000}
-                value={noteText}
-                onChange={(event) => setNoteText(event.target.value)}
-                placeholder="Add an update, a customer call, or anything the team should know."
-                className={`${inputClass} mt-1`}
-                disabled={savingNote}
-              />
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-stone-500">
-                  {noteText.length} of 1,000 characters
-                </p>
-                <button
-                  type="submit"
-                  disabled={savingNote || !noteText.trim()}
-                  className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {savingNote ? "Adding..." : "Add note"}
-                </button>
-              </div>
-            </form>
-          </Section>
-
-          <Section title="Activity">
-            {order.activity.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-500">
-                No activity yet.
-              </p>
-            ) : (
-              <ol className="mt-4 space-y-4">
-                {order.activity.map((activity, index) => {
-                  const summary = describeOrderActivity(activity);
-
-                  return (
-                    <li
-                      key={`${activity.created_at}-${activity.action}-${index}`}
-                      className="border-l-2 border-stone-200 pl-4"
-                    >
-                      <p className="text-sm font-medium text-stone-900">
-                        {orderActivityLabel(activity.action)}
-                      </p>
-                      <p className="mt-0.5 text-xs text-stone-500">
-                        {formatAdminDateTime(activity.created_at)}
-                        {" · "}
-                        {activity.admin_email ?? "System"}
-                      </p>
-                      {summary ? (
-                        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-stone-700">
-                          {summary}
-                        </p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-          </Section>
-        </div>
-
-        <aside className="space-y-6">
-          <Section title="Status">
-            <div className="mt-3">
-              <StatusBadge status={order.status} />
-            </div>
-
-            {role === null ? (
-              <p className="mt-4 text-sm leading-6 text-stone-600">
-                Your role could not be loaded, so status changes are
-                unavailable. Refresh the page to try again.
-              </p>
-            ) : null}
-
-            {role !== null &&
-            allowedTargets.length === 0 &&
-            !canCancel ? (
-              <p className="mt-4 text-sm leading-6 text-stone-600">
-                No status changes are available for this order.
-              </p>
-            ) : null}
-
-            {allowedTargets.length > 0 ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {allowedTargets.map((target) => (
-                  <button
-                    key={target}
-                    type="button"
-                    onClick={() => setConfirmTarget(target)}
-                    disabled={savingStatus}
-                    className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {statusActionLabel(target, order.status)}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {canCancel ? (
-              <button
-                type="button"
-                onClick={() => setConfirmTarget("cancelled")}
-                disabled={savingStatus}
-                className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancel this order
-              </button>
-            ) : null}
-
-            {order.status === "paid" ? (
-              <p className="mt-4 text-sm leading-6 text-stone-600">
-                To cancel a paid order you will need to refund it (coming
-                soon).
-              </p>
-            ) : null}
-          </Section>
-
-          <Section title="Money summary">
-            <dl className="mt-4 space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-stone-600">Subtotal</dt>
-                <dd className="font-medium text-stone-900">
-                  {formatCents(order.subtotal_cents)}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-stone-600">
-                  Discount
-                  {order.discount_code ? ` (${order.discount_code})` : ""}
-                </dt>
-                <dd className="font-medium text-stone-900">
-                  {order.discount_cents > 0
-                    ? `-${formatCents(order.discount_cents)}`
-                    : formatCents(0)}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-stone-600">Delivery</dt>
-                <dd className="font-medium text-stone-900">
-                  {formatCents(order.delivery_fee_cents)}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-stone-600">Tax</dt>
-                <dd className="font-medium text-stone-900">
-                  {formatCents(order.tax_cents)}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3 border-t border-stone-200 pt-2">
-                <dt className="font-semibold text-stone-900">Total</dt>
-                <dd className="text-base font-semibold text-stone-900">
-                  {formatCents(order.total_cents)}
-                </dd>
-              </div>
-            </dl>
-          </Section>
-
-          <Section title="Customer">
-            <dl className="mt-4 space-y-3">
-              <Field label="Name">
-                {order.customer.name ?? "Guest"}
-              </Field>
-              <Field label="Phone">
-                {order.customer.phone ? (
-                  <a
-                    href={telHref(order.customer.phone)}
-                    className="font-medium text-stone-900 underline decoration-stone-300 underline-offset-4 hover:decoration-stone-900"
-                  >
-                    {order.customer.phone}
-                  </a>
-                ) : (
-                  "No phone"
-                )}
-              </Field>
-              <Field label="Email">
-                <a
-                  href={`mailto:${order.customer.receipt_email}`}
-                  className="break-all font-medium text-stone-900 underline decoration-stone-300 underline-offset-4 hover:decoration-stone-900"
-                >
-                  {order.customer.receipt_email}
-                </a>
-              </Field>
-              <Field label="SMS updates">
-                {order.customer.sms_opt_in ? "On" : "Off"}
-              </Field>
-            </dl>
-          </Section>
-
-          <Section title="Delivery address">
-            {order.shipping_address.line1 ? (
-              <address className="mt-4 space-y-0.5 text-sm not-italic leading-6 text-stone-800">
-                <p className="font-medium">
-                  {order.shipping_address.name ?? "No name"}
-                </p>
-                <p>{order.shipping_address.line1}</p>
-                {order.shipping_address.line2 ? (
-                  <p>{order.shipping_address.line2}</p>
-                ) : null}
-                <p>
-                  {[
-                    order.shipping_address.city,
-                    order.shipping_address.state,
-                    order.shipping_address.zip,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")}
-                </p>
-                {order.shipping_address.phone ? (
-                  <p className="pt-1 text-stone-600">
-                    {order.shipping_address.phone}
-                  </p>
-                ) : null}
-              </address>
-            ) : (
-              <p className="mt-3 text-sm text-stone-500">
-                No delivery address on file.
-              </p>
-            )}
-          </Section>
-
-          <Section title="Payment">
-            {order.payments.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-500">
-                No payments recorded yet.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {order.payments.map((payment, index) => (
-                  <li
-                    key={`${payment.created_at}-${index}`}
-                    className="rounded-lg border border-stone-200 px-3 py-2"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-stone-900">
-                        {payment.provider === "stripe"
-                          ? "Stripe"
-                          : payment.provider}
-                      </p>
-                      <p className="text-sm font-medium text-stone-900">
-                        {formatCents(payment.amount_cents)}
-                      </p>
-                    </div>
-                    <p className="mt-0.5 text-xs text-stone-500">
-                      {paymentStatusLabel(payment.status)}
-                      {" · "}
-                      {formatAdminDateTime(payment.created_at)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div className="mt-4 border-t border-stone-200 pt-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
-                Stripe payment ID
-              </p>
-              {order.stripe_payment_intent_id ? (
-                <div className="mt-1 flex flex-wrap items-start gap-2">
-                  <code className="min-w-0 break-all rounded bg-stone-100 px-2 py-1 font-mono text-xs text-stone-800">
-                    {order.stripe_payment_intent_id}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => void copyPaymentId()}
-                    className="rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
-                  >
-                    Copy
-                  </button>
+            <div className="mt-5 border-t border-stone-200 pt-4">
+              <dl className="ml-auto w-full max-w-sm space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="min-w-0 break-words text-stone-600">Subtotal</dt>
+                  <dd className="font-medium text-stone-900">
+                    {formatCents(order.subtotal_cents)}
+                  </dd>
                 </div>
-              ) : (
-                <p className="mt-1 text-sm text-stone-500">
-                  No payment has been started.
-                </p>
-              )}
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="min-w-0 break-words text-stone-600">
+                    Discount
+                    {order.discount_code
+                      ? ` (${order.discount_code})`
+                      : ""}
+                  </dt>
+                  <dd className="font-medium text-stone-900">
+                    {order.discount_cents > 0
+                      ? `-${formatCents(order.discount_cents)}`
+                      : formatCents(0)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="min-w-0 break-words text-stone-600">Delivery</dt>
+                  <dd className="font-medium text-stone-900">
+                    {formatCents(order.delivery_fee_cents)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="min-w-0 break-words text-stone-600">Tax</dt>
+                  <dd className="font-medium text-stone-900">
+                    {formatCents(order.tax_cents)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-stone-200 pt-2">
+                  <dt className="font-semibold text-stone-900">Total</dt>
+                  <dd className="text-base font-semibold text-stone-900">
+                    {formatCents(order.total_cents)}
+                  </dd>
+                </div>
+              </dl>
             </div>
           </Section>
 
-          <Section title="Delivery">
+          <Section
+            title="Delivery"
+            className="order-3 min-[1100px]:order-none"
+          >
             {!deliveryAvailable ? (
               <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
                 {deliveryBlocked
@@ -942,7 +825,7 @@ export function OrderDetailClient({
 
             <fieldset
               disabled={!deliveryAvailable || savingDelivery}
-              className="mt-4 space-y-4 disabled:opacity-60"
+              className="mt-4 min-w-0 space-y-4 disabled:opacity-60"
             >
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -1143,6 +1026,303 @@ export function OrderDetailClient({
               ) : null}
             </fieldset>
           </Section>
+
+          <Section
+            title="Internal notes"
+            className="order-7 min-[1100px]:order-none"
+          >
+            {order.notes ? (
+              <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-stone-200 bg-stone-50 p-3">
+                <p className="whitespace-pre-wrap break-words text-sm leading-6 text-stone-800">
+                  {order.notes}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-stone-500">
+                No internal notes yet.
+              </p>
+            )}
+
+            <form
+              onSubmit={addNote}
+              className="mt-5 border-t border-stone-200 pt-4"
+            >
+              <label
+                htmlFor="order-note"
+                className="block text-sm font-medium text-stone-800"
+              >
+                Add a note for the team
+              </label>
+              <textarea
+                id="order-note"
+                rows={4}
+                maxLength={1000}
+                value={noteText}
+                onChange={(event) => setNoteText(event.target.value)}
+                placeholder="Add an update, a customer call, or anything the team should know."
+                className={`${inputClass} mt-1`}
+                disabled={savingNote}
+              />
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-stone-500">
+                  {noteText.length} of 1,000 characters
+                </p>
+                <button
+                  type="submit"
+                  disabled={savingNote || !noteText.trim()}
+                  className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {savingNote ? "Adding..." : "Add note"}
+                </button>
+              </div>
+            </form>
+          </Section>
+
+          <Section
+            title="Activity"
+            className="order-8 min-[1100px]:order-none"
+          >
+            {order.activity.length === 0 ? (
+              <p className="mt-3 text-sm text-stone-500">
+                No activity yet.
+              </p>
+            ) : (
+              <>
+                <ol className="mt-4 space-y-4">
+                  {visibleActivity.map((activity, index) => {
+                  const summary = describeOrderActivity(activity);
+
+                  return (
+                    <li
+                      key={`${activity.created_at}-${activity.action}-${index}`}
+                      className="border-l-2 border-stone-200 pl-4"
+                    >
+                      <p className="text-sm font-medium text-stone-900">
+                        {orderActivityLabel(activity.action)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-stone-500">
+                        {formatAdminDateTime(activity.created_at)}
+                        {" Â· "}
+                        {activity.admin_email ?? "System"}
+                      </p>
+                      {summary ? (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-stone-700">
+                          {summary}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+                </ol>
+
+                {order.activity.length > 8 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowAllActivity((current) => !current)
+                    }
+                    className="mt-4 rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                  >
+                    {showAllActivity
+                      ? "Show latest 8"
+                      : `Show all (${order.activity.length})`}
+                  </button>
+                ) : null}
+              </>
+            )}
+          </Section>
+        </div>
+
+        <aside className="contents min-[1100px]:order-2 min-[1100px]:sticky min-[1100px]:top-6 min-[1100px]:block min-[1100px]:space-y-5">
+          <Section
+            title="Next step"
+            className="order-1 min-[1100px]:order-none"
+          >
+            <div className="mt-3">
+              <StatusBadge status={order.status} />
+            </div>
+
+            {role === null ? (
+              <p className="mt-4 text-sm leading-6 text-stone-600">
+                Your role could not be loaded, so status changes are
+                unavailable. Refresh the page to try again.
+              </p>
+            ) : null}
+
+            {role !== null &&
+            allowedTargets.length === 0 &&
+            !canCancel &&
+            !showDeliveryHint ? (
+              <p className="mt-4 text-sm leading-6 text-stone-600">
+                No status changes are available for this order.
+              </p>
+            ) : null}
+
+            {allowedTargets.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {allowedTargets.map((target) => (
+                  <button
+                    key={target}
+                    type="button"
+                    onClick={() => setConfirmTarget(target)}
+                    disabled={savingStatus}
+                    className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {statusActionLabel(target, order.status)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {showDeliveryHint ? (
+              <p className="mt-4 text-sm leading-6 text-stone-600">
+                Delivery steps are in the Delivery section below
+              </p>
+            ) : null}
+
+            {canCancel ? (
+              <button
+                type="button"
+                onClick={() => setConfirmTarget("cancelled")}
+                disabled={savingStatus}
+                className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel this order
+              </button>
+            ) : null}
+
+            {order.status === "paid" ? (
+              <p className="mt-4 text-sm leading-6 text-stone-600">
+                To cancel a paid order you will need to refund it (coming
+                soon).
+              </p>
+            ) : null}
+          </Section>
+
+          <Section
+            title="Customer"
+            className="order-4 min-[1100px]:order-none"
+          >
+            <dl className="mt-4 space-y-3">
+              <Field label="Name">
+                {order.customer.name ?? "Guest"}
+              </Field>
+              <Field label="Phone">
+                {order.customer.phone ? (
+                  <a
+                    href={telHref(order.customer.phone)}
+                    className="font-medium text-stone-900 underline decoration-stone-300 underline-offset-4 hover:decoration-stone-900"
+                  >
+                    {order.customer.phone}
+                  </a>
+                ) : (
+                  "No phone"
+                )}
+              </Field>
+              <Field label="Email">
+                <a
+                  href={`mailto:${order.customer.receipt_email}`}
+                  className="break-all font-medium text-stone-900 underline decoration-stone-300 underline-offset-4 hover:decoration-stone-900"
+                >
+                  {order.customer.receipt_email}
+                </a>
+              </Field>
+              <Field label="SMS updates">
+                {order.customer.sms_opt_in ? "On" : "Off"}
+              </Field>
+            </dl>
+          </Section>
+
+          <Section
+            title="Delivery address"
+            className="order-5 min-[1100px]:order-none"
+          >
+            {order.shipping_address.line1 ? (
+              <address className="mt-4 space-y-0.5 break-words text-sm not-italic leading-6 text-stone-800">
+                <p className="font-medium">
+                  {order.shipping_address.name ?? "No name"}
+                </p>
+                <p>{order.shipping_address.line1}</p>
+                {order.shipping_address.line2 ? (
+                  <p>{order.shipping_address.line2}</p>
+                ) : null}
+                {cityLine ? <p>{cityLine}</p> : null}
+                {addressPhoneDiffers(
+                  order.shipping_address.phone,
+                  order.customer.phone,
+                ) ? (
+                  <p className="pt-1 text-stone-600">
+                    {order.shipping_address.phone}
+                  </p>
+                ) : null}
+              </address>
+            ) : (
+              <p className="mt-3 text-sm text-stone-500">
+                No delivery address on file.
+              </p>
+            )}
+          </Section>
+
+          <Section
+            title="Payment"
+            className="order-6 min-[1100px]:order-none"
+          >
+            {order.payments.length === 0 ? (
+              <p className="mt-3 text-sm text-stone-500">
+                No payments recorded yet.
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {order.payments.map((payment, index) => (
+                  <li
+                    key={`${payment.created_at}-${index}`}
+                    className="rounded-lg border border-stone-200 px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-stone-900">
+                        {payment.provider === "stripe"
+                          ? "Stripe"
+                          : payment.provider}
+                      </p>
+                      <p className="text-sm font-medium text-stone-900">
+                        {formatCents(payment.amount_cents)}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 text-xs text-stone-500">
+                      {paymentStatusLabel(payment.status)}
+                      {" Â· "}
+                      {formatAdminDateTime(payment.created_at)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-4 border-t border-stone-200 pt-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                Stripe payment ID
+              </p>
+              {order.stripe_payment_intent_id ? (
+                <div className="mt-1 flex flex-wrap items-start gap-2">
+                  <code className="min-w-0 break-all rounded bg-stone-100 px-2 py-1 font-mono text-xs text-stone-800">
+                    {order.stripe_payment_intent_id}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => void copyPaymentId()}
+                    className="rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                  >
+                    Copy
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-stone-500">
+                  No payment has been started.
+                </p>
+              )}
+            </div>
+          </Section>
+
         </aside>
       </div>
 
