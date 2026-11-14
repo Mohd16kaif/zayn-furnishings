@@ -25,6 +25,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -42,10 +43,21 @@ import {
   sendValidationError,
   writeAudit,
 } from "../lib/adminCatalog";
-import { stripe } from "../lib/stripe";
+import {
+  REFUNDABLE_ORDER_STATUSES,
+  applyRefundState,
+  refundIdFromRawEventId,
+  summarizeRefunds,
+  validateRefundRequest,
+} from "../lib/refundLedger";
+import { restockRefundedOrder } from "../lib/refundRestock";
+import { STRIPE_API_VERSION, stripe } from "../lib/stripe";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const ORDER_NUMBER_PATTERN = /^ZF-\d+$/;
+const REFUND_STRIPE_TIMEOUT_MS = 10_000;
+const REFUND_RATE_LIMIT = 10;
+const REFUND_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
 export function escapeLikePattern(value: string): string {
   return value
@@ -185,6 +197,43 @@ const noteCreateSchema = z.object({
     .trim()
     .min(1, "Enter a note.")
     .max(1000, "Notes must be 1,000 characters or fewer."),
+});
+
+const REFUND_REASONS = [
+  "requested_by_customer",
+  "damaged",
+  "unavailable",
+  "other",
+] as const;
+
+const refundRequestSchema = z
+  .object({
+    request_id: z.string().uuid("A valid request id is required."),
+    amount_cents: z
+      .number()
+      .int("Enter the refund amount in whole cents.")
+      .min(1, "Enter a refund amount of at least $0.01.")
+      .optional(),
+    reason: z.enum(REFUND_REASONS),
+    note: z
+      .string()
+      .trim()
+      .min(1, "Enter a short note explaining the refund.")
+      .max(500, "The note must be 500 characters or fewer."),
+    restock: z.boolean().default(false),
+  })
+  .strict();
+
+const refundRateLimiter = rateLimit({
+  windowMs: REFUND_RATE_LIMIT_WINDOW_MS,
+  limit: REFUND_RATE_LIMIT,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.admin?.id ?? ipKeyGenerator(req.ip ?? ""),
+  message: {
+    error: "Too many refund attempts. Please wait a minute and try again.",
+  },
 });
 
 async function cancelPaymentIntent(
@@ -454,50 +503,108 @@ adminOrdersRouter.get(
 
       const order = row.order;
 
-      const [itemRows, paymentRows, deliveryRows, activityRows] =
-        await Promise.all([
-          db
-            .select()
-            .from(orderItems)
-            .where(eq(orderItems.orderId, order.id)),
-          db
-            .select({
-              provider: payments.provider,
-              status: payments.status,
-              amountCents: payments.amountCents,
-              createdAt: payments.createdAt,
-            })
-            .from(payments)
-            .where(eq(payments.orderId, order.id))
-            .orderBy(payments.createdAt),
-          db
-            .select()
-            .from(deliveries)
-            .where(eq(deliveries.orderId, order.id))
-            .limit(1),
-          db
-            .select({
-              action: auditLog.action,
-              adminEmail: adminUsers.email,
-              createdAt: auditLog.createdAt,
-              details: auditLog.details,
-            })
-            .from(auditLog)
-            .leftJoin(
-              adminUsers,
-              eq(auditLog.adminUserId, adminUsers.id),
-            )
-            .where(
-              and(
-                eq(auditLog.entity, "order"),
-                eq(auditLog.entityId, order.id),
-              ),
-            )
-            .orderBy(desc(auditLog.createdAt))
-            .limit(50),
-        ]);
+      const [
+        itemRows,
+        paymentRows,
+        deliveryRows,
+        activityRows,
+        refundAuditRows,
+      ] = await Promise.all([
+        db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, order.id)),
+        db
+          .select()
+          .from(payments)
+          .where(eq(payments.orderId, order.id))
+          .orderBy(payments.createdAt),
+        db
+          .select()
+          .from(deliveries)
+          .where(eq(deliveries.orderId, order.id))
+          .limit(1),
+        db
+          .select({
+            action: auditLog.action,
+            adminEmail: adminUsers.email,
+            createdAt: auditLog.createdAt,
+            details: auditLog.details,
+          })
+          .from(auditLog)
+          .leftJoin(
+            adminUsers,
+            eq(auditLog.adminUserId, adminUsers.id),
+          )
+          .where(
+            and(
+              eq(auditLog.entity, "order"),
+              eq(auditLog.entityId, order.id),
+            ),
+          )
+          .orderBy(desc(auditLog.createdAt))
+          .limit(50),
+        db
+          .select({ details: auditLog.details })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.entity, "order"),
+              eq(auditLog.entityId, order.id),
+              eq(auditLog.action, "order.refunded"),
+            ),
+          )
+          .orderBy(desc(auditLog.createdAt))
+          .limit(100),
+      ]);
 
       const delivery = deliveryRows[0] ?? null;
+      const summary = summarizeRefunds(paymentRows, order.totalCents);
+      const refundReasons = new Map<string, string>();
+
+      for (const audit of refundAuditRows) {
+        const details =
+          typeof audit.details === "object" && audit.details !== null
+            ? (audit.details as Record<string, unknown>)
+            : null;
+        const refundId =
+          typeof details?.stripe_refund_id === "string"
+            ? details.stripe_refund_id
+            : null;
+        const reason =
+          typeof details?.reason === "string" ? details.reason : null;
+
+        if (refundId && reason && !refundReasons.has(refundId)) {
+          refundReasons.set(refundId, reason);
+        }
+      }
+
+      const refunds = paymentRows
+        .filter((payment) => payment.status === "refunded")
+        .map((payment) => {
+          const refundId =
+            refundIdFromRawEventId(payment.rawEventId) ??
+            (payment.providerPaymentId?.startsWith("re_")
+              ? payment.providerPaymentId
+              : null);
+
+          return {
+            amount_cents: payment.amountCents,
+            created_at: payment.createdAt,
+            reason: refundId
+              ? (refundReasons.get(refundId) ?? null)
+              : null,
+          };
+        });
+      const hasSucceededStripePayment = paymentRows.some(
+        (payment) =>
+          payment.provider === "stripe" && payment.status === "succeeded",
+      );
+      const canRefund =
+        req.admin?.role === "owner" &&
+        REFUNDABLE_ORDER_STATUSES.has(order.status) &&
+        hasSucceededStripePayment &&
+        summary.refundableRemainingCents > 0;
 
       res.set("Cache-Control", "no-store");
       res.json({
@@ -534,12 +641,18 @@ adminOrdersRouter.get(
           quantity: item.quantity,
           line_total_cents: item.lineTotalCents,
         })),
-        payments: paymentRows.map((payment) => ({
-          provider: payment.provider,
-          status: payment.status,
-          amount_cents: payment.amountCents,
-          created_at: payment.createdAt,
-        })),
+        payments: paymentRows
+          .filter((payment) => payment.status !== "refunded")
+          .map((payment) => ({
+            provider: payment.provider,
+            status: payment.status,
+            amount_cents: payment.amountCents,
+            created_at: payment.createdAt,
+          })),
+        refunds,
+        total_refunded_cents: summary.totalRefundedCents,
+        refundable_remaining_cents: summary.refundableRemainingCents,
+        can_refund: canRefund,
         stripe_payment_intent_id: order.stripePaymentIntentId,
         delivery: delivery ? serializeDelivery(delivery) : null,
         notes: order.internalNotes,
@@ -997,6 +1110,234 @@ adminOrdersRouter.post(
       res.json(result);
     } catch (error) {
       sendError(res, error, "Failed to add order note");
+    }
+  },
+);
+
+adminOrdersRouter.post(
+  "/orders/:orderNumber/refund",
+  refundRateLimiter,
+  async (req: Request, res: Response) => {
+    const admin = req.admin!;
+
+    if (admin.role !== "owner") {
+      res.status(403).json({
+        error: "Only the owner can issue refunds.",
+      });
+      return;
+    }
+
+    const orderNumber = readOrderNumber(req, res);
+
+    if (!orderNumber) {
+      return;
+    }
+
+    const parsed = refundRequestSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error);
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    if (!stripe) {
+      res.status(503).json({
+        error: "Refunds are temporarily unavailable. Please try again later.",
+      });
+      return;
+    }
+
+    const data = parsed.data;
+
+    try {
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.orderNumber, orderNumber))
+        .limit(1);
+
+      if (!order) {
+        throw new HttpError(404, "Order not found.");
+      }
+
+      const paymentRows = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.orderId, order.id));
+      const summary = summarizeRefunds(paymentRows, order.totalCents);
+      const validation = validateRefundRequest({
+        orderStatus: order.status,
+        hasSucceededStripePayment: paymentRows.some(
+          (payment) =>
+            payment.provider === "stripe" &&
+            payment.status === "succeeded",
+        ),
+        paidAmountCents: summary.paidAmountCents,
+        totalRefundedCents: summary.totalRefundedCents,
+        amountCents: data.amount_cents,
+        restock: data.restock,
+      });
+
+      if (!validation.ok) {
+        throw new HttpError(validation.status, validation.message);
+      }
+
+      if (!order.stripePaymentIntentId) {
+        throw new HttpError(
+          409,
+          "This order has no captured Stripe payment to refund.",
+        );
+      }
+
+      const refundAmountCents = validation.amountCents;
+      let refund;
+
+      try {
+        refund = await stripe.refunds.create(
+          {
+            payment_intent: order.stripePaymentIntentId,
+            amount: refundAmountCents,
+            metadata: { order_number: order.orderNumber },
+            ...(data.reason === "requested_by_customer"
+              ? { reason: "requested_by_customer" as const }
+              : {}),
+          },
+          {
+            idempotencyKey: `order-refund-${order.id}-${data.request_id}`,
+            apiVersion: STRIPE_API_VERSION,
+            timeout: REFUND_STRIPE_TIMEOUT_MS,
+          },
+        );
+      } catch (error) {
+        const stripeError = error as {
+          type?: string;
+          message?: string;
+        };
+
+        console.error(
+          "Stripe refund failed:",
+          stripeError.type ?? "unknown",
+          stripeError.message ?? "no message",
+        );
+
+        if (
+          stripeError.type === "StripeInvalidRequestError" ||
+          stripeError.type === "StripeCardError"
+        ) {
+          throw new HttpError(
+            409,
+            "Stripe would not accept that refund. Refresh the order and try again.",
+          );
+        }
+
+        throw new HttpError(
+          502,
+          "We could not confirm the refund with Stripe. Check the order before trying again.",
+        );
+      }
+
+      if (!refund?.id) {
+        throw new HttpError(
+          502,
+          "We could not confirm the refund with Stripe. Check the order before trying again.",
+        );
+      }
+
+      if (refund.status === "failed" || refund.status === "canceled") {
+        throw new HttpError(
+          409,
+          "Stripe did not complete the refund. Nothing was changed.",
+        );
+      }
+
+      const refundedCents =
+        Number.isInteger(refund.amount) && refund.amount > 0
+          ? refund.amount
+          : refundAmountCents;
+      const refundCreatedAt = new Date(refund.created * 1000);
+
+      const result = await db.transaction(async (tx) => {
+        const ledger = await applyRefundState(tx, {
+          orderId: order.id,
+          refunds: [
+            {
+              id: refund.id,
+              amountCents: refundedCents,
+              createdAt: refundCreatedAt,
+            },
+          ],
+        });
+        let restocked = false;
+
+        if (data.restock && ledger.fullyRefunded) {
+          const restock = await restockRefundedOrder(tx, {
+            orderId: order.id,
+            adminUserId: admin.id,
+            note: data.note,
+          });
+          restocked = restock.restocked;
+        }
+
+        const refundAudits = await tx
+          .select({ details: auditLog.details })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.entity, "order"),
+              eq(auditLog.entityId, order.id),
+              eq(auditLog.action, "order.refunded"),
+            ),
+          );
+        const alreadyAudited = refundAudits.some((audit) => {
+          const details =
+            typeof audit.details === "object" && audit.details !== null
+              ? (audit.details as Record<string, unknown>)
+              : null;
+
+          return details?.stripe_refund_id === refund.id;
+        });
+
+        if (!alreadyAudited) {
+          await writeAudit(tx, {
+            adminUserId: admin.id,
+            action: "order.refunded",
+            entity: "order",
+            entityId: order.id,
+            details: {
+              order_number: order.orderNumber,
+              amount_cents: refundedCents,
+              reason: data.reason,
+              note: data.note,
+              restock: data.restock,
+              restocked,
+              stripe_refund_id: refund.id,
+              resulting_order_status: ledger.orderStatus,
+            },
+          });
+        }
+
+        return {
+          order_number: order.orderNumber,
+          status: ledger.orderStatus,
+          refund: {
+            stripe_refund_id: refund.id,
+            amount_cents: refundedCents,
+            created_at: refundCreatedAt,
+          },
+          total_refunded_cents: ledger.totalRefundedCents,
+          refundable_remaining_cents: ledger.refundableRemainingCents,
+          restocked,
+        };
+      });
+
+      res.json(result);
+    } catch (error) {
+      sendError(res, error, "Failed to refund order");
     }
   },
 );

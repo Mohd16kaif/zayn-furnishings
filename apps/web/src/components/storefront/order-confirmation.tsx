@@ -330,6 +330,14 @@ export function OrderConfirmation({ initialOrder }: OrderConfirmationProps) {
                 <dt>Tax</dt>
                 <dd>{formatCents(order.tax_cents)}</dd>
               </div>
+              {(order.total_refunded_cents ?? 0) > 0 ? (
+                <div>
+                  <dt>Refunded</dt>
+                  <dd>
+                    −{formatCents(order.total_refunded_cents ?? 0)}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
 
             <div className="zf-order__summary-total">

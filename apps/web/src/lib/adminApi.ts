@@ -165,6 +165,12 @@ export type AdminOrderPayment = {
   created_at: string;
 };
 
+export type AdminOrderRefund = {
+  amount_cents: number;
+  created_at: string;
+  reason: string | null;
+};
+
 export type AdminOrderDelivery = {
   status: string;
   method: string | null;
@@ -214,6 +220,10 @@ export type AdminOrderDetail = {
   };
   items: AdminOrderItem[];
   payments: AdminOrderPayment[];
+  refunds: AdminOrderRefund[];
+  total_refunded_cents: number;
+  refundable_remaining_cents: number;
+  can_refund: boolean;
   stripe_payment_intent_id: string | null;
   delivery: AdminOrderDelivery | null;
   notes: string | null;

@@ -32,6 +32,7 @@ export type CustomerOrderDetail = {
   delivery_fee_cents: number;
   tax_cents: number;
   total_cents: number;
+  total_refunded_cents?: number;
   discount_code: string | null;
   address: {
     name: string | null;

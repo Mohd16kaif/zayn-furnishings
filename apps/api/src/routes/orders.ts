@@ -17,6 +17,7 @@ import {
   discountCodes,
   orderItems,
   orders,
+  payments,
   products,
   type Product,
 } from "../db/schema";
@@ -26,7 +27,7 @@ import { requireCustomer } from "../lib/customerAuth";
 import { computeDeliveryQuote } from "../lib/deliveryPricing";
 import { primaryImagesByProduct } from "../lib/productImages";
 import { reconcileOrderPayment } from "../lib/reconcileOrderPayment";
-import { stripe } from "../lib/stripe";
+import { STRIPE_API_VERSION, stripe } from "../lib/stripe";
 
 const ORDER_RATE_LIMIT = 10;
 const ORDER_RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -426,7 +427,7 @@ ordersRouter.post(
           createParams,
           {
             idempotencyKey: `order-intent-${created.id}`,
-            apiVersion: "2024-06-20",
+            apiVersion: STRIPE_API_VERSION,
           },
         );
 
@@ -611,7 +612,7 @@ ordersRouter.get(
         }
       }
 
-      const [items, deliveryRows] = await Promise.all([
+      const [items, deliveryRows, paymentRows] = await Promise.all([
         db
           .select()
           .from(orderItems)
@@ -621,8 +622,18 @@ ordersRouter.get(
           .from(deliveries)
           .where(eq(deliveries.orderId, order.id))
           .limit(1),
+        db
+          .select({
+            status: payments.status,
+            amountCents: payments.amountCents,
+          })
+          .from(payments)
+          .where(eq(payments.orderId, order.id)),
       ]);
       const delivery = deliveryRows[0] ?? null;
+      const totalRefundedCents = paymentRows
+        .filter((payment) => payment.status === "refunded")
+        .reduce((total, payment) => total + payment.amountCents, 0);
 
       res.set("Cache-Control", "no-store");
       res.json({
@@ -634,6 +645,7 @@ ordersRouter.get(
         delivery_fee_cents: order.deliveryFeeCents,
         tax_cents: order.taxCents,
         total_cents: order.totalCents,
+        total_refunded_cents: totalRefundedCents,
         discount_code: order.discountCode,
         address: {
           name: order.shippingName,

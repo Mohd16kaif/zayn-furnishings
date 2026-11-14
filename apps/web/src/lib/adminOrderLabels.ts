@@ -1,4 +1,27 @@
 import type { AdminOrderStatus } from "./adminApi";
+import { formatCents } from "./money";
+
+export const REFUND_REASON_OPTIONS = [
+  { value: "requested_by_customer", label: "Customer asked for it" },
+  { value: "damaged", label: "Item damaged or faulty" },
+  { value: "unavailable", label: "Item unavailable" },
+  { value: "other", label: "Other" },
+] as const;
+
+export function refundReasonLabel(reason: string | null): string {
+  switch (reason) {
+    case "requested_by_customer":
+      return "Customer asked for it";
+    case "damaged":
+      return "Item damaged or faulty";
+    case "unavailable":
+      return "Item unavailable";
+    case "other":
+      return "Other";
+    default:
+      return "Reason not recorded";
+  }
+}
 
 export function orderStatusLabel(status: AdminOrderStatus | string): string {
   switch (status) {
@@ -114,6 +137,8 @@ export function orderActivityLabel(action: string): string {
       return "Stock shortage flagged";
     case "order.delivery_updated":
       return "Delivery updated";
+    case "order.refunded":
+      return "Refund issued";
     case "order.stale_pending_cancelled":
       return "Unpaid order cancelled automatically";
     default:
@@ -228,6 +253,32 @@ export function describeOrderActivity(activity: {
       if (labels.length > 0) {
         parts.push(`Updated ${labels.join(", ")}.`);
       }
+    }
+
+    return parts.length > 0 ? parts.join(" ") : null;
+  }
+
+  if (activity.action === "order.refunded") {
+    const parts: string[] = [];
+    const amountCents =
+      typeof details?.amount_cents === "number"
+        ? details.amount_cents
+        : null;
+
+    if (amountCents !== null) {
+      parts.push(`${formatCents(amountCents)} was refunded.`);
+    }
+
+    if (typeof details?.reason === "string") {
+      parts.push(`Reason: ${refundReasonLabel(details.reason)}.`);
+    }
+
+    if (details?.restocked === true) {
+      parts.push("Items were put back in stock.");
+    }
+
+    if (note) {
+      parts.push(note);
     }
 
     return parts.length > 0 ? parts.join(" ") : null;

@@ -5,6 +5,10 @@ import { env } from "../config/env";
 import { db } from "../db/client";
 import { orders, payments } from "../db/schema";
 import { markOrderPaid } from "../lib/markOrderPaid";
+import {
+  applyRefundState,
+  type RefundLedgerEntry,
+} from "../lib/refundLedger";
 import { stripe } from "../lib/stripe";
 
 function sendReceived(res: Response): void {
@@ -19,6 +23,18 @@ function paymentIntentIdFromCharge(charge: Stripe.Charge): string | null {
   }
 
   return value?.id ?? null;
+}
+
+function refundsFromCharge(charge: Stripe.Charge): RefundLedgerEntry[] {
+  return (charge.refunds?.data ?? [])
+    .filter(
+      (refund) => refund.status !== "failed" && refund.status !== "canceled",
+    )
+    .map((refund) => ({
+      id: refund.id,
+      amountCents: refund.amount,
+      createdAt: new Date(refund.created * 1000),
+    }));
 }
 
 async function findOrderByPaymentIntentId(paymentIntentId: string) {
@@ -147,38 +163,21 @@ stripeWebhookRouter.post(
           return;
         }
 
-        const refundedAmountCents = charge.amount_refunded;
+        const ledger = await db.transaction(async (tx) =>
+          applyRefundState(tx, {
+            orderId: order.id,
+            refunds: refundsFromCharge(charge),
+            stripeAmountRefundedCents: charge.amount_refunded,
+            fallbackRawEventId: event.id,
+            fallbackCreatedAt: new Date(event.created * 1000),
+          }),
+        );
 
-        await db.transaction(async (tx) => {
-          const inserted = await tx
-            .insert(payments)
-            .values({
-              orderId: order.id,
-              provider: "stripe",
-              providerPaymentId: paymentIntentId,
-              amountCents: refundedAmountCents,
-              currency: charge.currency,
-              status: "refunded",
-              rawEventId: event.id,
-            })
-            .onConflictDoNothing({ target: payments.rawEventId })
-            .returning({ id: payments.id });
-
-          if (inserted.length === 0) {
-            return;
-          }
-
-          await tx
-            .update(orders)
-            .set({
-              status:
-                refundedAmountCents >= order.totalCents
-                  ? "refunded"
-                  : "partially_refunded",
-              updatedAt: new Date(),
-            })
-            .where(eq(orders.id, order.id));
-        });
+        if (ledger.ledgerMismatch) {
+          console.warn(
+            `Stripe webhook: refund ledger exceeds Stripe amount for order ${order.orderNumber}`,
+          );
+        }
 
         sendReceived(res);
         return;

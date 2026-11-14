@@ -33,9 +33,11 @@ import {
   orderStatusBadgeClass,
   orderStatusLabel,
   paymentStatusLabel,
+  refundReasonLabel,
 } from "@/lib/adminOrderLabels";
 import { notifyOrdersChanged } from "@/lib/adminOrderEvents";
 import { formatCents } from "@/lib/money";
+import { RefundDialog } from "./refund-dialog";
 
 const inputClass =
   "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -51,6 +53,14 @@ const FULFILLMENT_FLOW: AdminOrderStatus[] = [
   "processing",
   "out_for_delivery",
   "delivered",
+];
+
+const REFUNDABLE_STATUSES: AdminOrderStatus[] = [
+  "paid",
+  "processing",
+  "out_for_delivery",
+  "delivered",
+  "partially_refunded",
 ];
 
 const DELIVERY_METHOD_OPTIONS = [
@@ -302,6 +312,7 @@ export function OrderDetailClient({
   const [deliveryConfirmStatus, setDeliveryConfirmStatus] =
     useState<DeliveryActionStatus | null>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
 
   const load = useCallback(
     async (options: { quiet?: boolean } = {}) => {
@@ -505,6 +516,14 @@ export function OrderDetailClient({
     }
   }
 
+  async function handleRefunded(amountCents: number) {
+    setRefundOpen(false);
+    showToast("success", `${formatCents(amountCents)} refunded.`);
+    await load({ quiet: true });
+    notifyOrdersChanged();
+    router.refresh();
+  }
+
   async function copyPaymentId() {
     if (!order?.stripe_payment_intent_id) {
       return;
@@ -606,6 +625,11 @@ export function OrderDetailClient({
     ? order.activity
     : order.activity.slice(0, 8);
   const cityLine = addressCityLine(order.shipping_address);
+  const staffRefundHint =
+    role === "staff" &&
+    order.refundable_remaining_cents > 0 &&
+    REFUNDABLE_STATUSES.includes(order.status) &&
+    order.payments.some((payment) => payment.status === "succeeded");
 
   return (
     <div>
@@ -1298,6 +1322,56 @@ export function OrderDetailClient({
               </ul>
             )}
 
+            {order.refunds.length > 0 ? (
+              <ul className="mt-3 space-y-2 border-t border-stone-200 pt-3">
+                {order.refunds.map((refund, index) => (
+                  <li
+                    key={`${refund.created_at}-${index}`}
+                    className="text-sm text-stone-700"
+                  >
+                    <span className="font-medium text-stone-900">
+                      Refunded {formatCents(refund.amount_cents)}
+                    </span>{" "}
+                    on {formatAdminDate(refund.created_at)}
+                    <span className="block text-xs text-stone-500">
+                      {refundReasonLabel(refund.reason)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <dl className="mt-3 space-y-2 border-t border-stone-200 pt-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-stone-600">Refunded so far</dt>
+                <dd className="font-medium text-stone-900">
+                  {formatCents(order.total_refunded_cents)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-stone-600">Still refundable</dt>
+                <dd className="font-medium text-stone-900">
+                  {formatCents(order.refundable_remaining_cents)}
+                </dd>
+              </div>
+            </dl>
+
+            {order.can_refund ? (
+              <button
+                type="button"
+                onClick={() => setRefundOpen(true)}
+                className="mt-4 w-full rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+              >
+                Refund this order
+              </button>
+            ) : null}
+
+            {staffRefundHint ? (
+              <p className="mt-3 text-xs leading-5 text-stone-500">
+                Only the owner can issue refunds
+              </p>
+            ) : null}
+
             <div className="mt-4 border-t border-stone-200 pt-4">
               <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
                 Stripe payment ID
@@ -1389,6 +1463,15 @@ export function OrderDetailClient({
           }
         }}
       />
+
+      {refundOpen ? (
+        <RefundDialog
+          orderNumber={order.order_number}
+          remainingCents={order.refundable_remaining_cents}
+          onClose={() => setRefundOpen(false)}
+          onRefunded={handleRefunded}
+        />
+      ) : null}
     </div>
   );
 }
