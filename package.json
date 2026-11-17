@@ -13,6 +13,7 @@
     "lint": "pnpm -r lint",
     "test": "pnpm -r --if-present test",
     "check:encoding": "node scripts/check-encoding.mjs",
+    "stripe:listen": "node scripts/stripe-listen.mjs",
     "start": "pnpm --filter @zayn/api start",
     "db:generate": "pnpm --filter @zayn/api db:generate",
     "db:migrate": "pnpm --filter @zayn/api db:migrate"

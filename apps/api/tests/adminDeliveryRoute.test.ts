@@ -271,6 +271,31 @@ describe("delivery PATCH on an already delivered order", () => {
     expect(response.status).toBe(200);
     expect((await response.json()).delivery.status).toBe("delivered");
   });
+
+  it("returns changed:false without auditing or emailing when nothing changes", async () => {
+    state.order = baseOrder({ status: "processing" });
+    state.delivery = baseDelivery({
+      status: "scheduled",
+      scheduledDate: "2099-01-01",
+    });
+
+    const response = await patchDelivery({
+      ...deliveryBody,
+      scheduled_date: "2099-01-01",
+      status: "scheduled",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      changed: false,
+      status: "processing",
+      delivery: { status: "scheduled" },
+    });
+    expect(state.deliveryUpdates).toHaveLength(0);
+    expect(state.orderUpdates).toHaveLength(0);
+    expect(state.audits).toHaveLength(0);
+    expect(state.emailSchedules).toHaveLength(0);
+  });
 });
 
 describe("status PATCH delivery sync", () => {

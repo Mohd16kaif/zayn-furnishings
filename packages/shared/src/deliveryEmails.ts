@@ -97,15 +97,13 @@ export function deliveryEmailEvents({
   const scheduleChanged =
     PAID_OR_LATER.has(after.orderStatus) && dateChanged;
 
-  const events: DeliveryEmailTemplate[] = [];
+  if (becameOutForDelivery) {
+    return ["out_for_delivery"];
+  }
 
   if (scheduleChanged) {
-    events.push("delivery_scheduled");
+    return ["delivery_scheduled"];
   }
 
-  if (becameOutForDelivery) {
-    events.push("out_for_delivery");
-  }
-
-  return events;
+  return [];
 }

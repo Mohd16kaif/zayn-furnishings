@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type ToastKind = "success" | "error";
+export type ToastKind = "success" | "error" | "info";
 
 export type ToastMessage = {
   kind: ToastKind;
@@ -64,7 +64,9 @@ export function AdminToast({
       className={`fixed right-4 top-4 z-[60] flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg ${
         toast.kind === "error"
           ? "border-red-200 bg-red-50 text-red-800"
-          : "border-green-200 bg-green-50 text-green-800"
+          : toast.kind === "info"
+            ? "border-blue-200 bg-blue-50 text-blue-800"
+            : "border-green-200 bg-green-50 text-green-800"
       }`}
     >
       <p className="min-w-0 flex-1 leading-5">{toast.message}</p>

@@ -58,6 +58,11 @@ app.use("/admin", adminDashboardRouter);
 app.use("/admin", adminProductsRouter);
 
 console.log(`Phone verifier: ${activePhoneVerifierName}`);
+console.log(
+  env.STRIPE_WEBHOOK_SECRET
+    ? `Stripe webhook secret configured, ends ...${env.STRIPE_WEBHOOK_SECRET.slice(-4)}`
+    : "Stripe webhook secret not configured",
+);
 
 app.listen(env.PORT, () => {
   console.log(`API listening on http://localhost:${env.PORT}`);

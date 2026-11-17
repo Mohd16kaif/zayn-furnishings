@@ -23,6 +23,24 @@ export function refundReasonLabel(reason: string | null): string {
   }
 }
 
+const ORDER_MESSAGE_TEMPLATE_LABELS: Record<string, string> = {
+  order_confirmation: "Order confirmation",
+  delivery_scheduled: "Delivery scheduled",
+  out_for_delivery: "Out for delivery",
+  delivered: "Delivered",
+  refund_issued: "Refund issued",
+};
+
+export function orderMessageTemplateLabel(
+  template: string | null,
+): string {
+  if (!template) {
+    return "Email";
+  }
+
+  return ORDER_MESSAGE_TEMPLATE_LABELS[template] ?? formatWords(template);
+}
+
 export function orderStatusLabel(status: AdminOrderStatus | string): string {
   switch (status) {
     case "pending":
@@ -139,6 +157,8 @@ export function orderActivityLabel(action: string): string {
       return "Delivery updated";
     case "order.refunded":
       return "Refund issued";
+    case "order.message_resent":
+      return "Message resent";
     case "order.stale_pending_cancelled":
       return "Unpaid order cancelled automatically";
     default:
@@ -188,6 +208,15 @@ export function describeOrderActivity(activity: {
 
   if (activity.action === "order.note_added") {
     return note;
+  }
+
+  if (activity.action === "order.message_resent") {
+    const template =
+      typeof details?.template === "string" ? details.template : null;
+
+    return template
+      ? `Resent: ${orderMessageTemplateLabel(template)}`
+      : "Resent an email.";
   }
 
   if (activity.action === "order.stock_shortage") {

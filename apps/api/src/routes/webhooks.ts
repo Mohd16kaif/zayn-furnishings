@@ -85,10 +85,9 @@ stripeWebhookRouter.post(
         signature,
         env.STRIPE_WEBHOOK_SECRET,
       );
-    } catch (error) {
-      console.error(
-        "Stripe webhook signature verification failed:",
-        error instanceof Error ? error.message : error,
+    } catch {
+      console.warn(
+        "Stripe webhook signature check failed: STRIPE_WEBHOOK_SECRET probably does not match the listener or endpoint",
       );
       res.status(400).json({ error: "Invalid Stripe webhook signature." });
       return;

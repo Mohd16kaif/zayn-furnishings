@@ -31,6 +31,7 @@ import {
   formatAdminDateOnly,
   formatAdminDateTime,
   orderActivityLabel,
+  orderMessageTemplateLabel,
   orderStatusBadgeClass,
   orderStatusLabel,
   paymentStatusLabel,
@@ -81,14 +82,6 @@ const TIME_WINDOW_OPTIONS = [
   "Evening (4pm to 8pm)",
   "All day",
 ];
-
-const MESSAGE_TEMPLATE_LABELS: Record<string, string> = {
-  order_confirmation: "Order confirmation",
-  delivery_scheduled: "Delivery scheduled",
-  out_for_delivery: "Out for delivery",
-  delivered: "Delivered",
-  refund_issued: "Refund issued",
-};
 
 const RESENDABLE_TEMPLATES: ReadonlySet<string> = new Set([
   "order_confirmation",
@@ -515,7 +508,7 @@ export function OrderDetailClient({
     setSavingDelivery(true);
 
     try {
-      await adminFetch(
+      const result = await adminFetch<{ changed?: boolean }>(
         `/admin/orders/${encodeURIComponent(orderNumber)}/delivery`,
         {
           method: "PATCH",
@@ -531,6 +524,11 @@ export function OrderDetailClient({
           },
         },
       );
+
+      if (result.changed === false) {
+        showToast("info", "Nothing to change.");
+        return;
+      }
 
       showToast(
         "success",
@@ -1197,10 +1195,7 @@ export function OrderDetailClient({
               <ul className="mt-4 space-y-3">
                 {order.messages.map((message) => {
                   const badge = messageStatusBadge(message.status);
-                  const label = message.template
-                    ? (MESSAGE_TEMPLATE_LABELS[message.template] ??
-                      message.template)
-                    : "Email";
+                  const label = orderMessageTemplateLabel(message.template);
                   const canResend = canResendMessage(
                     order,
                     message.template,

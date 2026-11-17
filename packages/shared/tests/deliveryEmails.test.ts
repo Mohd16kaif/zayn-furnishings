@@ -206,7 +206,7 @@ describe("deliveryEmailEvents", () => {
     ).toEqual(["delivered"]);
   });
 
-  it("returns both scheduled and out for delivery when both change", () => {
+  it("drops delivery_scheduled when out for delivery is due", () => {
     expect(
       events(
         { orderStatus: "processing", deliveryStatus: "pending" },
@@ -216,7 +216,7 @@ describe("deliveryEmailEvents", () => {
           scheduledDate: "2026-11-14",
         },
       ),
-    ).toEqual(["delivery_scheduled", "out_for_delivery"]);
+    ).toEqual(["out_for_delivery"]);
   });
 
   it("returns nothing for backward order moves", () => {

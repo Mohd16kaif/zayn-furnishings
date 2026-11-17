@@ -1092,6 +1092,20 @@ adminOrdersRouter.patch(
           changedFields.push("driver_notes");
         }
 
+        if (changedFields.length === 0) {
+          return {
+            order_number: order.orderNumber,
+            status: order.status,
+            delivery: serializeDelivery(delivery),
+            changed: false,
+            emailOrderId: order.id,
+            emailOrderNumber: order.orderNumber,
+            emailEvents: [],
+            emailScheduledDate: delivery.scheduledDate,
+            emailTimeWindow: delivery.timeWindow,
+          };
+        }
+
         const deliveryStatusChanged = delivery.status !== next.status;
         const sync = deliveryStatusChanged
           ? deliveryOrderSync(next.status, order.status, admin.role)
@@ -1164,6 +1178,7 @@ adminOrdersRouter.patch(
           order_number: order.orderNumber,
           status: orderStatus,
           delivery: serializeDelivery(updatedDelivery),
+          changed: true,
           emailOrderId: order.id,
           emailOrderNumber: order.orderNumber,
           emailEvents,
@@ -1181,23 +1196,25 @@ adminOrdersRouter.patch(
         ...response
       } = result;
 
-      try {
-        scheduleDeliveryEmails({
-          orderId: emailOrderId,
-          orderNumber: emailOrderNumber,
-          events: emailEvents,
-          scheduledDate: emailScheduledDate,
-          timeWindow: emailTimeWindow,
-        });
-      } catch (emailError) {
-        console.error(
-          "Delivery email scheduling failed:",
-          truncateError(
-            emailError instanceof Error
-              ? emailError.message
-              : "Unknown email error.",
-          ),
-        );
+      if (response.changed) {
+        try {
+          scheduleDeliveryEmails({
+            orderId: emailOrderId,
+            orderNumber: emailOrderNumber,
+            events: emailEvents,
+            scheduledDate: emailScheduledDate,
+            timeWindow: emailTimeWindow,
+          });
+        } catch (emailError) {
+          console.error(
+            "Delivery email scheduling failed:",
+            truncateError(
+              emailError instanceof Error
+                ? emailError.message
+                : "Unknown email error.",
+            ),
+          );
+        }
       }
 
       res.json(response);
