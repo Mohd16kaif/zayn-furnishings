@@ -66,10 +66,12 @@ export function escapeLikePattern(value: string): string {
     .replace(/_/g, "\\_");
 }
 
+export const STOCK_SHORTAGE_MARKER = "STOCK SHORTAGE";
+
 export function hasStockShortage(
   notes: string | null | undefined,
 ): boolean {
-  return /STOCK SHORTAGE/i.test(notes ?? "");
+  return new RegExp(STOCK_SHORTAGE_MARKER, "i").test(notes ?? "");
 }
 
 export function formatNoteTimestamp(date: Date): string {

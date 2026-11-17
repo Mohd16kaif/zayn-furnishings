@@ -6,6 +6,7 @@ import { env } from "./config/env";
 import { adminAuthRouter } from "./routes/adminAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
 import { adminContentRouter } from "./routes/adminContent";
+import { adminDashboardRouter } from "./routes/adminDashboard";
 import { adminDeliveryZonesRouter } from "./routes/adminDeliveryZones";
 import { adminOrdersRouter } from "./routes/adminOrders";
 import { adminProductsRouter } from "./routes/adminProducts";
@@ -50,6 +51,7 @@ app.use("/admin", adminContentRouter);
 app.use("/admin", adminSettingsRouter);
 app.use("/admin", adminDeliveryZonesRouter);
 app.use("/admin", adminOrdersRouter);
+app.use("/admin", adminDashboardRouter);
 app.use("/admin", adminProductsRouter);
 
 console.log(`Phone verifier: ${activePhoneVerifierName}`);
