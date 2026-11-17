@@ -2,6 +2,7 @@ import {
   auditLog,
   customers,
   deliveries,
+  notificationsLog,
   orderItems,
   orders,
   payments,
@@ -20,6 +21,7 @@ export type FakeRefundState = {
   products: FakeRow[];
   stockMovements: FakeRow[];
   audits: FakeRow[];
+  notifications: FakeRow[];
   sequence: number;
 };
 
@@ -35,6 +37,7 @@ export function createFakeRefundState(
     products: [],
     stockMovements: [],
     audits: [],
+    notifications: [],
     sequence: 0,
     ...overrides,
   };
@@ -76,6 +79,10 @@ function rowsForTable(
 
   if (table === auditLog) {
     return state.audits;
+  }
+
+  if (table === notificationsLog) {
+    return state.notifications;
   }
 
   return null;
@@ -177,6 +184,14 @@ export function createFakeRefundDb(state: FakeRefundState) {
             table === payments &&
             typeof value.rawEventId === "string" &&
             rows.some((row) => row.rawEventId === value.rawEventId)
+          ) {
+            continue;
+          }
+
+          if (
+            table === notificationsLog &&
+            typeof value.dedupeKey === "string" &&
+            rows.some((row) => row.dedupeKey === value.dedupeKey)
           ) {
             continue;
           }

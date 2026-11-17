@@ -4,6 +4,8 @@ import Stripe from "stripe";
 import { env } from "../config/env";
 import { db } from "../db/client";
 import { orders, payments } from "../db/schema";
+import { scheduleRefundIssuedEmails } from "../emails/refundNotifications";
+import { truncateError } from "../emails/outbox";
 import { markOrderPaid } from "../lib/markOrderPaid";
 import {
   applyRefundState,
@@ -176,6 +178,19 @@ stripeWebhookRouter.post(
         if (ledger.ledgerMismatch) {
           console.warn(
             `Stripe webhook: refund ledger exceeds Stripe amount for order ${order.orderNumber}`,
+          );
+        }
+
+        try {
+          scheduleRefundIssuedEmails(order.id, ledger.insertedRawEventIds);
+        } catch (emailError) {
+          console.error(
+            "Refund email scheduling failed:",
+            truncateError(
+              emailError instanceof Error
+                ? emailError.message
+                : "Unknown email error.",
+            ),
           );
         }
 

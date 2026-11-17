@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   LogSender,
+  ResendSender,
   createEmailSender,
   formatFromHeader,
 } from "../src/emails/sender";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("email sender selection", () => {
   it("uses Resend when both the API key and from address are set", () => {
@@ -42,5 +47,59 @@ describe("email sender selection", () => {
     });
 
     expect(result.providerMessageId).toMatch(/^log_/);
+  });
+});
+
+describe("ResendSender idempotency", () => {
+  it("sends the dedupe key as an Idempotency-Key header", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ id: "pm_1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = new ResendSender("re_test_key", "orders@example.com");
+
+    await sender.send({
+      to: "buyer@example.com",
+      subject: "Test",
+      html: "<p>Test</p>",
+      text: "Test",
+      dedupeKey: "out_for_delivery:order-1",
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = init?.headers as Record<string, string>;
+
+    expect(headers["Idempotency-Key"]).toBe(
+      "out_for_delivery:order-1",
+    );
+    expect(headers["Idempotency-Key"].length).toBeLessThanOrEqual(256);
+  });
+
+  it("omits the header when there is no dedupe key", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ id: "pm_1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = new ResendSender("re_test_key", "orders@example.com");
+
+    await sender.send({
+      to: "buyer@example.com",
+      subject: "Test",
+      html: "<p>Test</p>",
+      text: "Test",
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = init?.headers as Record<string, string>;
+
+    expect(headers["Idempotency-Key"]).toBeUndefined();
   });
 });

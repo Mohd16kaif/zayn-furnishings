@@ -9,6 +9,26 @@ const state = vi.hoisted(() => ({
   deliveryUpdates: [] as Record<string, unknown>[],
   orderUpdates: [] as Record<string, unknown>[],
   audits: [] as Record<string, unknown>[],
+  emailSchedules: [] as Array<{
+    orderId: string;
+    orderNumber: string;
+    events: string[];
+    scheduledDate: string | null;
+    timeWindow: string | null;
+  }>,
+}));
+
+vi.mock("../src/emails/deliveryNotifications", () => ({
+  scheduleDeliveryEmails: (input: {
+    orderId: string;
+    orderNumber: string;
+    events: string[];
+    scheduledDate: string | null;
+    timeWindow: string | null;
+  }) => {
+    state.emailSchedules.push(input);
+    throw new Error("Email sender unavailable");
+  },
 }));
 
 vi.mock("../src/middleware/requireAdmin", () => ({
@@ -147,6 +167,8 @@ beforeEach(async () => {
   state.deliveryUpdates.length = 0;
   state.orderUpdates.length = 0;
   state.audits.length = 0;
+  state.emailSchedules.length = 0;
+  vi.spyOn(console, "error").mockImplementation(() => {});
 
   const app = express();
   app.use(express.json());
@@ -161,6 +183,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
@@ -230,6 +253,23 @@ describe("delivery PATCH on an already delivered order", () => {
         order_status_after: "delivered",
       },
     });
+
+    expect(state.emailSchedules).toHaveLength(1);
+    expect(state.emailSchedules[0]).toMatchObject({
+      orderId: "order-1",
+      orderNumber: "ZF-100013",
+      events: ["delivered"],
+    });
+  });
+
+  it("keeps the delivery result when the email schedule throws", async () => {
+    const response = await patchDelivery({
+      ...deliveryBody,
+      status: "delivered",
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).delivery.status).toBe("delivered");
   });
 });
 
@@ -272,5 +312,30 @@ describe("status PATCH delivery sync", () => {
         delivery_changed: false,
       },
     });
+  });
+
+  it("queues out for delivery when the order status advances", async () => {
+    state.order = baseOrder({ status: "processing" });
+    state.delivery = baseDelivery({ status: "scheduled" });
+
+    const response = await patchStatus({ status: "out_for_delivery" });
+
+    expect(response.status).toBe(200);
+    expect(state.emailSchedules).toHaveLength(1);
+    expect(state.emailSchedules[0]).toMatchObject({
+      orderId: "order-1",
+      events: ["out_for_delivery"],
+    });
+  });
+
+  it("does not queue an email for a status move with no relevant change", async () => {
+    state.order = baseOrder({ status: "paid" });
+    state.delivery = baseDelivery({ status: "pending" });
+
+    const response = await patchStatus({ status: "processing" });
+
+    expect(response.status).toBe(200);
+    expect(state.emailSchedules).toHaveLength(1);
+    expect(state.emailSchedules[0].events).toEqual([]);
   });
 });

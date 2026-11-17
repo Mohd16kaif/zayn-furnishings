@@ -11,6 +11,7 @@ export type EmailMessage = {
   text: string;
   replyTo?: string;
   fromName?: string;
+  dedupeKey?: string;
 };
 
 export type EmailSendResult = {
@@ -61,11 +62,17 @@ export class ResendSender implements EmailSender {
   ) {}
 
   async send(message: EmailMessage): Promise<EmailSendResult> {
+    const idempotencyKey = message.dedupeKey
+      ?.replace(/[\r\n]+/g, "")
+      .trim();
     const response = await fetch(RESEND_ENDPOINT, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
+        ...(idempotencyKey
+          ? { "Idempotency-Key": idempotencyKey }
+          : {}),
       },
       body: JSON.stringify({
         from: formatFromHeader(

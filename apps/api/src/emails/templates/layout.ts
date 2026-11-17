@@ -6,6 +6,24 @@ const GOLD = "#B8893B";
 const MUTED = "#6B5A4E";
 const BORDER = "#E5D9CC";
 
+export function orderEmailUrl(
+  webOrigin: string,
+  orderNumber: string,
+): string {
+  return `${webOrigin}/order/${encodeURIComponent(orderNumber)}`;
+}
+
+export function renderEmailButton(
+  url: string,
+  label: string,
+): string {
+  return `<p style="margin:0 0 24px 0;">
+      <a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 20px;background:${GOLD};color:#FFFFFF;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;">
+        ${escapeHtml(label)}
+      </a>
+    </p>`;
+}
+
 export function renderEmailLayout({
   title,
   storeName,

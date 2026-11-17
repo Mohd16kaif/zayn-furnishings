@@ -9,6 +9,7 @@ export * from "./content";
 export * from "./orderTransitions";
 export * from "./adminDelivery";
 export * from "./adminDashboard";
+export * from "./deliveryEmails";
 
 export const API_NAME = "zayn-furnishings-api";
 

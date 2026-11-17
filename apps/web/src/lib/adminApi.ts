@@ -192,6 +192,16 @@ export type AdminOrderActivity = {
   details: unknown;
 };
 
+export type AdminOrderMessage = {
+  id: string;
+  template: string | null;
+  to_masked: string;
+  status: "queued" | "sent" | "delivered" | "failed" | "logged";
+  created_at: string;
+  sent_at: string | null;
+  error: string | null;
+};
+
 export type AdminOrderDetail = {
   order_number: string;
   status: AdminOrderStatus;
@@ -226,6 +236,7 @@ export type AdminOrderDetail = {
   can_refund: boolean;
   stripe_payment_intent_id: string | null;
   delivery: AdminOrderDelivery | null;
+  messages: AdminOrderMessage[];
   notes: string | null;
   has_stock_shortage: boolean;
   activity: AdminOrderActivity[];

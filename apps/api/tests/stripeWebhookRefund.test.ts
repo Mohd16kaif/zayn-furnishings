@@ -11,6 +11,14 @@ import {
 const mock = vi.hoisted(() => ({
   db: null as unknown,
   event: null as unknown,
+  emailSchedules: [] as Array<{ orderId: string; keys: string[] }>,
+}));
+
+vi.mock("../src/emails/refundNotifications", () => ({
+  scheduleRefundIssuedEmails: (orderId: string, keys: string[]) => {
+    mock.emailSchedules.push({ orderId, keys });
+    throw new Error("Email sender unavailable");
+  },
 }));
 
 vi.mock("../src/config/env", () => ({
@@ -107,6 +115,8 @@ beforeEach(async () => {
   });
   mock.db = createFakeRefundDb(state);
   mock.event = chargeEvent();
+  mock.emailSchedules.length = 0;
+  vi.spyOn(console, "error").mockImplementation(() => {});
 
   const app = express();
   app.use("/webhooks", stripeWebhookRouter);
@@ -120,6 +130,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
@@ -157,6 +168,9 @@ describe("charge.refunded webhook", () => {
     expect(state.stockMovements).toHaveLength(0);
     expect(state.products[0].stockQty).toBe(3);
     expect(state.deliveries[0].status).toBe("pending");
+    expect(mock.emailSchedules).toEqual([
+      { orderId: "order-1", keys: ["refund_event:evt_refund_1"] },
+    ]);
   });
 
   it("is a no-op when the same event is replayed", async () => {
@@ -166,6 +180,10 @@ describe("charge.refunded webhook", () => {
     expect(replay.status).toBe(200);
     expect(state.payments).toHaveLength(2);
     expect(state.orders[0].status).toBe("partially_refunded");
+    expect(mock.emailSchedules).toEqual([
+      { orderId: "order-1", keys: ["refund_event:evt_refund_1"] },
+      { orderId: "order-1", keys: [] },
+    ]);
   });
 
   it("records known refund ids and can fully refund an order", async () => {

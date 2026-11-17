@@ -13,6 +13,14 @@ const mock = vi.hoisted(() => ({
   adminId: "admin-1",
   db: null as unknown,
   createRefund: vi.fn(),
+  emailSchedules: [] as Array<{ orderId: string; keys: string[] }>,
+}));
+
+vi.mock("../src/emails/refundNotifications", () => ({
+  scheduleRefundIssuedEmails: (orderId: string, keys: string[]) => {
+    mock.emailSchedules.push({ orderId, keys });
+    throw new Error("Email sender unavailable");
+  },
 }));
 
 vi.mock("../src/middleware/requireAdmin", () => ({
@@ -143,6 +151,8 @@ beforeEach(async () => {
   mock.adminId = `admin-${Date.now()}-${Math.random()}`;
   mock.createRefund.mockReset();
   mock.createRefund.mockResolvedValue(stripeRefund());
+  mock.emailSchedules.length = 0;
+  vi.spyOn(console, "error").mockImplementation(() => {});
 
   state = createFakeRefundState({
     orders: [orderRow()],
@@ -166,6 +176,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
@@ -277,6 +288,23 @@ describe("POST /admin/orders/:orderNumber/refund", () => {
         resulting_order_status: "refunded",
       },
     });
+    expect(mock.emailSchedules).toEqual([
+      { orderId: "order-1", keys: ["refund:re_123"] },
+    ]);
+  });
+
+  it("does not schedule a refund email again on a replay", async () => {
+    mock.createRefund.mockResolvedValue(stripeRefund({ amount: 2500 }));
+    const partialBody = { ...baseBody, amount_cents: 2500 };
+
+    await postRefund(partialBody);
+    const replay = await postRefund(partialBody);
+
+    expect(replay.status).toBe(200);
+    expect(mock.emailSchedules).toEqual([
+      { orderId: "order-1", keys: ["refund:re_123"] },
+      { orderId: "order-1", keys: [] },
+    ]);
   });
 
   it("supports partial refunds and only sends Stripe's customer reason", async () => {

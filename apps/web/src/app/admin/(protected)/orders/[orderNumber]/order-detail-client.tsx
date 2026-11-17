@@ -21,6 +21,7 @@ import {
   AdminApiError,
   type AdminMe,
   type AdminOrderDetail,
+  type AdminOrderMessage,
   type AdminOrderStatus,
 } from "@/lib/adminApi";
 import {
@@ -80,6 +81,90 @@ const TIME_WINDOW_OPTIONS = [
   "Evening (4pm to 8pm)",
   "All day",
 ];
+
+const MESSAGE_TEMPLATE_LABELS: Record<string, string> = {
+  order_confirmation: "Order confirmation",
+  delivery_scheduled: "Delivery scheduled",
+  out_for_delivery: "Out for delivery",
+  delivered: "Delivered",
+  refund_issued: "Refund issued",
+};
+
+const RESENDABLE_TEMPLATES: ReadonlySet<string> = new Set([
+  "order_confirmation",
+  "delivery_scheduled",
+  "out_for_delivery",
+  "delivered",
+]);
+
+function messageStatusBadge(status: AdminOrderMessage["status"]): {
+  label: string;
+  className: string;
+} {
+  switch (status) {
+    case "sent":
+    case "delivered":
+      return {
+        label: "Sent",
+        className: "bg-emerald-100 text-emerald-800",
+      };
+    case "logged":
+      return {
+        label: "Test mode only",
+        className: "bg-amber-100 text-amber-800",
+      };
+    case "failed":
+      return { label: "Failed", className: "bg-red-100 text-red-800" };
+    default:
+      return { label: "Queued", className: "bg-stone-100 text-stone-700" };
+  }
+}
+
+function canResendMessage(
+  order: AdminOrderDetail,
+  template: string | null,
+): boolean {
+  if (!template || !RESENDABLE_TEMPLATES.has(template)) {
+    return false;
+  }
+
+  if (order.status === "pending" || order.status === "cancelled") {
+    return false;
+  }
+
+  if (template === "order_confirmation") {
+    return [
+      "paid",
+      "processing",
+      "out_for_delivery",
+      "delivered",
+      "partially_refunded",
+      "refunded",
+    ].includes(order.status);
+  }
+
+  if (template === "delivery_scheduled") {
+    return Boolean(order.delivery?.scheduled_date);
+  }
+
+  if (template === "out_for_delivery") {
+    return (
+      order.status === "out_for_delivery" ||
+      order.status === "delivered" ||
+      order.delivery?.status === "out_for_delivery" ||
+      order.delivery?.status === "delivered"
+    );
+  }
+
+  if (template === "delivered") {
+    return (
+      order.status === "delivered" ||
+      order.delivery?.status === "delivered"
+    );
+  }
+
+  return false;
+}
 
 type DeliveryFormState = {
   method: string;
@@ -313,6 +398,9 @@ export function OrderDetailClient({
     useState<DeliveryActionStatus | null>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
+  const [resendTarget, setResendTarget] =
+    useState<AdminOrderMessage | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   const load = useCallback(
     async (options: { quiet?: boolean } = {}) => {
@@ -522,6 +610,52 @@ export function OrderDetailClient({
     await load({ quiet: true });
     notifyOrdersChanged();
     router.refresh();
+  }
+
+  async function resendMessage(message: AdminOrderMessage) {
+    setResendTarget(null);
+
+    if (!message.template) {
+      return;
+    }
+
+    setResendingId(message.id);
+
+    try {
+      await adminFetch(
+        `/admin/orders/${encodeURIComponent(
+          orderNumber,
+        )}/messages/${encodeURIComponent(message.template)}/resend`,
+        { method: "POST" },
+      );
+
+      showToast("success", "Email sent again.");
+      await load({ quiet: true });
+      notifyOrdersChanged();
+      router.refresh();
+    } catch (sendError) {
+      const messageText =
+        sendError instanceof AdminApiError && sendError.status === 429
+          ? "Too many resends. Please wait a minute and try again."
+          : friendlyApiError(
+              sendError,
+              "Unable to resend the email.",
+              "You do not have permission to resend this email.",
+            );
+
+      showToast("error", messageText);
+
+      if (
+        sendError instanceof AdminApiError &&
+        (sendError.status === 409 ||
+          sendError.status === 429 ||
+          sendError.status === 404)
+      ) {
+        await load({ quiet: true });
+      }
+    } finally {
+      setResendingId(null);
+    }
   }
 
   async function copyPaymentId() {
@@ -1052,6 +1186,79 @@ export function OrderDetailClient({
           </Section>
 
           <Section
+            title="Messages sent"
+            className="order-4 min-[1100px]:order-none"
+          >
+            {order.messages.length === 0 ? (
+              <p className="mt-3 text-sm text-stone-500">
+                No emails sent yet.
+              </p>
+            ) : (
+              <ul className="mt-4 space-y-3">
+                {order.messages.map((message) => {
+                  const badge = messageStatusBadge(message.status);
+                  const label = message.template
+                    ? (MESSAGE_TEMPLATE_LABELS[message.template] ??
+                      message.template)
+                    : "Email";
+                  const canResend = canResendMessage(
+                    order,
+                    message.template,
+                  );
+
+                  return (
+                    <li
+                      key={message.id}
+                      className="rounded-lg border border-stone-200 px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-stone-900">
+                            {label}
+                          </p>
+                          <p className="mt-0.5 break-all text-xs text-stone-500">
+                            {message.to_masked}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-xs text-stone-500">
+                        {formatAdminDateTime(
+                          message.sent_at ?? message.created_at,
+                        )}
+                      </p>
+
+                      {message.error ? (
+                        <p className="mt-1 break-words text-xs text-red-700">
+                          {message.error}
+                        </p>
+                      ) : null}
+
+                      {canResend ? (
+                        <button
+                          type="button"
+                          onClick={() => setResendTarget(message)}
+                          disabled={resendingId !== null}
+                          className="mt-3 rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {resendingId === message.id
+                            ? "Sending..."
+                            : "Send again"}
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
+
+          <Section
             title="Internal notes"
             className="order-7 min-[1100px]:order-none"
           >
@@ -1460,6 +1667,24 @@ export function OrderDetailClient({
         onConfirm={() => {
           if (deliveryConfirmStatus) {
             void saveDelivery(deliveryConfirmStatus);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={resendTarget !== null}
+        title="Send this email again?"
+        description="This sends the email to the customer again."
+        confirmLabel="Send again"
+        busy={resendingId !== null}
+        onCancel={() => {
+          if (resendingId === null) {
+            setResendTarget(null);
+          }
+        }}
+        onConfirm={() => {
+          if (resendTarget) {
+            void resendMessage(resendTarget);
           }
         }}
       />

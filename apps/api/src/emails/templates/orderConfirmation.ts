@@ -1,6 +1,13 @@
 import { escapeHtml, safeHeader } from "./escape";
 import { formatEmailMoney } from "./format";
-import { renderEmailLayout } from "./layout";
+import {
+  orderEmailUrl,
+  renderEmailButton,
+  renderEmailLayout,
+} from "./layout";
+import type { RenderedEmail } from "./types";
+
+export type { RenderedEmail } from "./types";
 
 const INK = "#2A1D14";
 const GOLD = "#B8893B";
@@ -35,12 +42,6 @@ export type OrderConfirmationData = {
   storeName: string;
 };
 
-export type RenderedEmail = {
-  subject: string;
-  html: string;
-  text: string;
-};
-
 function addressLines(address: OrderConfirmationAddress): string[] {
   const cityState = [address.city, address.state]
     .filter((value): value is string => Boolean(value?.trim()))
@@ -60,9 +61,7 @@ function addressLines(address: OrderConfirmationAddress): string[] {
 export function renderOrderConfirmation(
   data: OrderConfirmationData,
 ): RenderedEmail {
-  const orderUrl = `${data.webOrigin}/order/${encodeURIComponent(
-    data.orderNumber,
-  )}`;
+  const orderUrl = orderEmailUrl(data.webOrigin, data.orderNumber);
   const itemRows = data.items
     .map(
       (item) => `<tr>
@@ -106,10 +105,14 @@ export function renderOrderConfirmation(
         <td style="padding:3px 0;color:${MUTED};">Subtotal</td>
         <td align="right" style="padding:3px 0;color:${INK};">${escapeHtml(formatEmailMoney(data.subtotalCents))}</td>
       </tr>
-      <tr>
+      ${
+        data.discountCents > 0
+          ? `<tr>
         <td style="padding:3px 0;color:${MUTED};">Discount</td>
         <td align="right" style="padding:3px 0;color:${INK};">${escapeHtml(formatEmailMoney(data.discountCents))}</td>
-      </tr>
+      </tr>`
+          : ""
+      }
       <tr>
         <td style="padding:3px 0;color:${MUTED};">Delivery</td>
         <td align="right" style="padding:3px 0;color:${INK};">${escapeHtml(formatEmailMoney(data.deliveryFeeCents))}</td>
@@ -131,11 +134,7 @@ export function renderOrderConfirmation(
       ${addressHtml}
     </div>
 
-    <p style="margin:0 0 24px 0;">
-      <a href="${escapeHtml(orderUrl)}" style="display:inline-block;padding:12px 20px;background:${GOLD};color:#FFFFFF;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;">
-        View your order
-      </a>
-    </p>
+    ${renderEmailButton(orderUrl, "View your order")}
 
     <p style="margin:0;color:${MUTED};">
       We will email you again when your delivery is scheduled.
@@ -165,8 +164,11 @@ Items:
 ${textItems}
 
 Subtotal: ${formatEmailMoney(data.subtotalCents)}
-Discount: ${formatEmailMoney(data.discountCents)}
-Delivery: ${formatEmailMoney(data.deliveryFeeCents)}
+${
+  data.discountCents > 0
+    ? `Discount: ${formatEmailMoney(data.discountCents)}\n`
+    : ""
+}Delivery: ${formatEmailMoney(data.deliveryFeeCents)}
 Tax: ${formatEmailMoney(data.taxCents)}
 Total: ${formatEmailMoney(data.totalCents)}
 

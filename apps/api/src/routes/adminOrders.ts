@@ -1,6 +1,7 @@
 import {
   ORDER_STATUSES,
   canTransition,
+  deliveryEmailEvents,
   deliveryOrderSync,
   deliveryStatusForOrderStatus,
   deliveryUpdateSchema,
@@ -9,6 +10,7 @@ import {
   isManualStatusBlocked,
   type OrderStatus,
 } from "@zayn/shared";
+import { randomUUID } from "node:crypto";
 import {
   and,
   count,
@@ -33,10 +35,26 @@ import {
   auditLog,
   customers,
   deliveries,
+  notificationsLog,
   orderItems,
   orders,
   payments,
 } from "../db/schema";
+import { scheduleDeliveryEmails } from "../emails/deliveryNotifications";
+import {
+  CUSTOMER_EMAIL_TEMPLATES,
+  DELIVERY_SCHEDULED_TEMPLATE,
+  DELIVERED_TEMPLATE,
+  ORDER_CONFIRMATION_TEMPLATE,
+  OUT_FOR_DELIVERY_TEMPLATE,
+  dispatchNotification,
+  enqueueNotification,
+  isResendableEmailTemplate,
+  logSkippedNoEmail,
+  maskEmailAddress,
+  truncateError,
+} from "../emails/outbox";
+import { scheduleRefundIssuedEmails } from "../emails/refundNotifications";
 import {
   HttpError,
   sendError,
@@ -58,6 +76,16 @@ const ORDER_NUMBER_PATTERN = /^ZF-\d+$/;
 const REFUND_STRIPE_TIMEOUT_MS = 10_000;
 const REFUND_RATE_LIMIT = 10;
 const REFUND_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RESEND_RATE_LIMIT = 5;
+const MESSAGE_ERROR_LIMIT = 160;
+const PAID_OR_LATER_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set([
+  "paid",
+  "processing",
+  "out_for_delivery",
+  "delivered",
+  "partially_refunded",
+  "refunded",
+]);
 
 export function escapeLikePattern(value: string): string {
   return value
@@ -235,6 +263,18 @@ const refundRateLimiter = rateLimit({
     req.admin?.id ?? ipKeyGenerator(req.ip ?? ""),
   message: {
     error: "Too many refund attempts. Please wait a minute and try again.",
+  },
+});
+
+const resendRateLimiter = rateLimit({
+  windowMs: REFUND_RATE_LIMIT_WINDOW_MS,
+  limit: RESEND_RATE_LIMIT,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.admin?.id ?? ipKeyGenerator(req.ip ?? ""),
+  message: {
+    error: "Too many email resends. Please wait a minute and try again.",
   },
 });
 
@@ -511,6 +551,7 @@ adminOrdersRouter.get(
         deliveryRows,
         activityRows,
         refundAuditRows,
+        messageRows,
       ] = await Promise.all([
         db
           .select()
@@ -557,6 +598,28 @@ adminOrdersRouter.get(
             ),
           )
           .orderBy(desc(auditLog.createdAt))
+          .limit(100),
+        db
+          .select({
+            id: notificationsLog.id,
+            template: notificationsLog.template,
+            toAddress: notificationsLog.toAddress,
+            status: notificationsLog.status,
+            createdAt: notificationsLog.createdAt,
+            sentAt: notificationsLog.sentAt,
+            error: notificationsLog.error,
+          })
+          .from(notificationsLog)
+          .where(
+            and(
+              eq(notificationsLog.orderId, order.id),
+              eq(notificationsLog.channel, "email"),
+              inArray(notificationsLog.template, [
+                ...CUSTOMER_EMAIL_TEMPLATES,
+              ]),
+            ),
+          )
+          .orderBy(desc(notificationsLog.createdAt))
           .limit(100),
       ]);
 
@@ -657,6 +720,17 @@ adminOrdersRouter.get(
         can_refund: canRefund,
         stripe_payment_intent_id: order.stripePaymentIntentId,
         delivery: delivery ? serializeDelivery(delivery) : null,
+        messages: messageRows.map((message) => ({
+          id: message.id,
+          template: message.template,
+          to_masked: maskEmailAddress(message.toAddress ?? ""),
+          status: message.status,
+          created_at: message.createdAt,
+          sent_at: message.sentAt,
+          error: message.error
+            ? truncateError(message.error, MESSAGE_ERROR_LIMIT)
+            : null,
+        })),
         notes: order.internalNotes,
         has_stock_shortage: hasStockShortage(order.internalNotes),
         activity: activityRows.map((activity) => ({
@@ -820,14 +894,62 @@ adminOrdersRouter.patch(
           },
         });
 
+        const emailBefore = {
+          orderStatus: from,
+          deliveryStatus: delivery?.status ?? null,
+          scheduledDate: delivery?.scheduledDate ?? null,
+          timeWindow: delivery?.timeWindow ?? null,
+        };
+        const emailAfter = {
+          orderStatus: to,
+          deliveryStatus: deliveryStatusAfter ?? delivery?.status ?? null,
+          scheduledDate: delivery?.scheduledDate ?? null,
+          timeWindow: delivery?.timeWindow ?? null,
+        };
+        const emailEvents = deliveryEmailEvents({
+          before: emailBefore,
+          after: emailAfter,
+        });
+
         return {
           order_number: order.orderNumber,
           status: to,
           updated_at: now,
+          emailOrderId: order.id,
+          emailOrderNumber: order.orderNumber,
+          emailEvents,
+          emailAfter,
         };
       });
 
-      res.json(result);
+      const {
+        emailOrderId,
+        emailOrderNumber,
+        emailEvents,
+        emailAfter,
+        ...response
+      } = result;
+
+      try {
+        scheduleDeliveryEmails({
+          orderId: emailOrderId,
+          orderNumber: emailOrderNumber,
+          events: emailEvents,
+          scheduledDate: emailAfter.scheduledDate,
+          timeWindow: emailAfter.timeWindow,
+        });
+      } catch (emailError) {
+        console.error(
+          "Delivery email scheduling failed:",
+          truncateError(
+            emailError instanceof Error
+              ? emailError.message
+              : "Unknown email error.",
+          ),
+        );
+      }
+
+      res.json(response);
     } catch (error) {
       sendError(res, error, "Failed to update order status");
     }
@@ -1023,14 +1145,62 @@ adminOrdersRouter.patch(
           },
         });
 
+        const emailEvents = deliveryEmailEvents({
+          before: {
+            orderStatus: order.status,
+            deliveryStatus: delivery.status,
+            scheduledDate: delivery.scheduledDate,
+            timeWindow: delivery.timeWindow,
+          },
+          after: {
+            orderStatus: orderStatus,
+            deliveryStatus: updatedDelivery.status,
+            scheduledDate: updatedDelivery.scheduledDate,
+            timeWindow: updatedDelivery.timeWindow,
+          },
+        });
+
         return {
           order_number: order.orderNumber,
           status: orderStatus,
           delivery: serializeDelivery(updatedDelivery),
+          emailOrderId: order.id,
+          emailOrderNumber: order.orderNumber,
+          emailEvents,
+          emailScheduledDate: updatedDelivery.scheduledDate,
+          emailTimeWindow: updatedDelivery.timeWindow,
         };
       });
 
-      res.json(result);
+      const {
+        emailOrderId,
+        emailOrderNumber,
+        emailEvents,
+        emailScheduledDate,
+        emailTimeWindow,
+        ...response
+      } = result;
+
+      try {
+        scheduleDeliveryEmails({
+          orderId: emailOrderId,
+          orderNumber: emailOrderNumber,
+          events: emailEvents,
+          scheduledDate: emailScheduledDate,
+          timeWindow: emailTimeWindow,
+        });
+      } catch (emailError) {
+        console.error(
+          "Delivery email scheduling failed:",
+          truncateError(
+            emailError instanceof Error
+              ? emailError.message
+              : "Unknown email error.",
+          ),
+        );
+      }
+
+      res.json(response);
     } catch (error) {
       sendError(res, error, "Failed to update delivery");
     }
@@ -1112,6 +1282,146 @@ adminOrdersRouter.post(
       res.json(result);
     } catch (error) {
       sendError(res, error, "Failed to add order note");
+    }
+  },
+);
+
+adminOrdersRouter.post(
+  "/orders/:orderNumber/messages/:template/resend",
+  resendRateLimiter,
+  async (req: Request, res: Response) => {
+    const orderNumber = readOrderNumber(req, res);
+
+    if (!orderNumber) {
+      return;
+    }
+
+    const template = String(req.params.template ?? "");
+
+    if (!isResendableEmailTemplate(template)) {
+      res.status(404).json({ error: "This email cannot be resent." });
+      return;
+    }
+
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    const admin = req.admin!;
+
+    try {
+      const [order] = await db
+        .select({
+          id: orders.id,
+          orderNumber: orders.orderNumber,
+          status: orders.status,
+          email: orders.email,
+        })
+        .from(orders)
+        .where(eq(orders.orderNumber, orderNumber))
+        .limit(1);
+
+      if (!order) {
+        throw new HttpError(404, "Order not found.");
+      }
+
+      if (order.status === "pending" || order.status === "cancelled") {
+        throw new HttpError(
+          409,
+          "This email cannot be sent for this order.",
+        );
+      }
+
+      const [delivery] = await db
+        .select()
+        .from(deliveries)
+        .where(eq(deliveries.orderId, order.id))
+        .limit(1);
+
+      if (template === ORDER_CONFIRMATION_TEMPLATE) {
+        if (!PAID_OR_LATER_ORDER_STATUSES.has(order.status)) {
+          throw new HttpError(
+            409,
+            "This email can only be sent after payment.",
+          );
+        }
+      } else if (template === DELIVERY_SCHEDULED_TEMPLATE) {
+        if (!delivery?.scheduledDate) {
+          throw new HttpError(
+            409,
+            "Add a delivery date before sending this email.",
+          );
+        }
+      } else if (template === OUT_FOR_DELIVERY_TEMPLATE) {
+        const out =
+          order.status === "out_for_delivery" ||
+          order.status === "delivered" ||
+          delivery?.status === "out_for_delivery" ||
+          delivery?.status === "delivered";
+
+        if (!out) {
+          throw new HttpError(
+            409,
+            "Mark the order out for delivery before sending this email.",
+          );
+        }
+      } else if (template === DELIVERED_TEMPLATE) {
+        const delivered =
+          order.status === "delivered" ||
+          delivery?.status === "delivered";
+
+        if (!delivered) {
+          throw new HttpError(
+            409,
+            "Mark the order delivered before sending this email.",
+          );
+        }
+      }
+
+      const toAddress = order.email.trim();
+
+      if (!toAddress) {
+        logSkippedNoEmail(order.orderNumber);
+        throw new HttpError(409, "This order has no email address.");
+      }
+
+      const dedupeKey = `${template}:${order.id}:resend:${randomUUID()}`;
+      const enqueued = await enqueueNotification({
+        template,
+        orderId: order.id,
+        toAddress,
+        dedupeKey,
+      });
+
+      if (!enqueued.inserted || !enqueued.id) {
+        throw new HttpError(
+          500,
+          "The email could not be queued. Please try again.",
+        );
+      }
+
+      await writeAudit(db, {
+        adminUserId: admin.id,
+        action: "order.message_resent",
+        entity: "order",
+        entityId: order.id,
+        details: {
+          order_number: order.orderNumber,
+          template,
+          notification_id: enqueued.id,
+          dedupe_key: dedupeKey,
+        },
+      });
+
+      await dispatchNotification(enqueued.id);
+
+      res.json({
+        ok: true,
+        message: { id: enqueued.id, template },
+      });
+    } catch (error) {
+      sendError(res, error, "Failed to resend the email");
     }
   },
 );
@@ -1262,6 +1572,7 @@ adminOrdersRouter.post(
           ? refund.amount
           : refundAmountCents;
       const refundCreatedAt = new Date(refund.created * 1000);
+      let refundEmailRowKeys: string[] = [];
 
       const result = await db.transaction(async (tx) => {
         const ledger = await applyRefundState(tx, {
@@ -1274,6 +1585,7 @@ adminOrdersRouter.post(
             },
           ],
         });
+        refundEmailRowKeys = ledger.insertedRawEventIds;
         let restocked = false;
 
         if (data.restock && ledger.fullyRefunded) {
@@ -1336,6 +1648,19 @@ adminOrdersRouter.post(
           restocked,
         };
       });
+
+      try {
+        scheduleRefundIssuedEmails(order.id, refundEmailRowKeys);
+      } catch (emailError) {
+        console.error(
+          "Refund email scheduling failed:",
+          truncateError(
+            emailError instanceof Error
+              ? emailError.message
+              : "Unknown email error.",
+          ),
+        );
+      }
 
       res.json(result);
     } catch (error) {
