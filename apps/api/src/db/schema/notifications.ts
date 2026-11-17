@@ -1,4 +1,11 @@
-import { index, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { baseColumns } from "./common";
 import { customers } from "./customers";
 import { notificationChannelEnum, notificationStatusEnum } from "./enums";
@@ -17,8 +24,11 @@ export const notificationsLog = pgTable(
     channel: notificationChannelEnum("channel").notNull(),
     template: text("template"),
     toAddress: text("to_address"),
+    dedupeKey: text("dedupe_key").unique(),
     status: notificationStatusEnum("status").default("queued").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
     providerMessageId: text("provider_message_id"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
     error: text("error"),
   },
   (table) => [

@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import { API_NAME } from "@zayn/shared";
 import { env } from "./config/env";
+import { initializeEmailSender } from "./emails/sender";
 import { adminAuthRouter } from "./routes/adminAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
 import { adminContentRouter } from "./routes/adminContent";
@@ -17,6 +18,8 @@ import { healthRouter } from "./routes/health";
 import { ordersRouter } from "./routes/orders";
 import { publicRouter } from "./routes/public";
 import { stripeWebhookRouter } from "./routes/webhooks";
+
+initializeEmailSender();
 
 const app = express();
 

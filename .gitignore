@@ -16,6 +16,9 @@ build/
 # Image originals backup
 _originals/
 
+# Email preview output
+apps/api/tmp-email-preview/
+
 # Logs
 *.log
 npm-debug.log*

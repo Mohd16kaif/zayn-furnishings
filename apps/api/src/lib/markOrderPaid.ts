@@ -13,6 +13,8 @@ import {
   products,
   stockMovements,
 } from "../db/schema";
+import { scheduleOrderPaidEmails } from "../emails/orderNotifications";
+import { truncateError } from "../emails/outbox";
 
 export const SUCCEEDED_PAYMENT_RAW_EVENT_PREFIX = "pi_succeeded:";
 
@@ -96,7 +98,7 @@ export async function markOrderPaid(
     };
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [order] = await tx
       .select()
       .from(orders)
@@ -318,4 +320,22 @@ export async function markOrderPaid(
       shortages,
     };
   });
+
+  if (
+    (result.status === "paid" || result.status === "processing") &&
+    result.orderId
+  ) {
+    try {
+      scheduleOrderPaidEmails(result.orderId);
+    } catch (error) {
+      console.error(
+        "Order email scheduling failed:",
+        truncateError(
+          error instanceof Error ? error.message : "Unknown email error.",
+        ),
+      );
+    }
+  }
+
+  return result;
 }

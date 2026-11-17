@@ -21,6 +21,8 @@ const envSchema = z.object({
   OWNER_EMAIL: optionalString,
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   STOREFRONT_API_KEY: optionalString,
+  RESEND_API_KEY: optionalString,
+  EMAIL_FROM: optionalString,
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
   TWILIO_ACCOUNT_SID: optionalString,

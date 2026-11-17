@@ -79,4 +79,5 @@ export const notificationStatusEnum = pgEnum("notification_status", [
   "sent",
   "delivered",
   "failed",
+  "logged",
 ]);
