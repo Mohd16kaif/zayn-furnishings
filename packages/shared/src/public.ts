@@ -1,6 +1,16 @@
 // Types for the public read-only API (apps/api /api/public routes).
 // Shared between the API and the web app so both stay in sync.
 
+export const MAX_ORDER_QTY = 10;
+
+export function maxOrderQty(stockQty: number): number {
+  if (!Number.isFinite(stockQty)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(0, Math.floor(stockQty)), MAX_ORDER_QTY);
+}
+
 export interface PublicCategoryNode {
   id: string;
   name: string;
@@ -77,6 +87,7 @@ export interface PublicProductDetail {
   price_cents: number;
   sale_price_cents: number | null;
   in_stock: boolean;
+  max_order_qty: number;
   material: string | null;
   color: string | null;
   dimensions: {
@@ -91,6 +102,33 @@ export interface PublicProductDetail {
   seo_title: string | null;
   seo_description: string | null;
   related_products: PublicProductCard[];
+}
+
+export interface PublicCartValidateItem {
+  product_id: string;
+  quantity: number;
+}
+
+export interface PublicCartValidatedItem {
+  id: string;
+  slug: string;
+  name: string;
+  price_cents: number;
+  sale_price_cents: number | null;
+  effective_price_cents: number;
+  primary_image_url: string | null;
+  in_stock: boolean;
+  available: true;
+  max_qty: number;
+  clamped_qty: number;
+  qty_adjusted: boolean;
+}
+
+export interface PublicCartValidation {
+  items: PublicCartValidatedItem[];
+  unavailable: string[];
+  subtotal_cents: number;
+  delivery: PublicDeliveryCheck | null;
 }
 
 export interface PublicDeliveryZone {

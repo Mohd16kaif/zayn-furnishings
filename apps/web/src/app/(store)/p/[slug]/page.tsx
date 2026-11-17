@@ -345,11 +345,19 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 </p>
               ) : null}
 
-              <span
-                className={`zf-stock ${product.in_stock ? "zf-stock--in" : "zf-stock--out"}`}
-              >
-                {product.in_stock ? "In stock" : "Sold out"}
-              </span>
+              <div className="zf-pdp__stock-row">
+                <span
+                  className={`zf-stock ${product.in_stock ? "zf-stock--in" : "zf-stock--out"}`}
+                >
+                  {product.in_stock ? "In stock" : "Sold out"}
+                </span>
+                {product.max_order_qty > 0 &&
+                product.max_order_qty <= 5 ? (
+                  <span className="zf-pdp__stock-note">
+                    Only {product.max_order_qty} left
+                  </span>
+                ) : null}
+              </div>
 
               {shortDescription ? (
                 <p className="zf-pdp__lede">{shortDescription}</p>
@@ -363,6 +371,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
                   price_cents: effectivePriceCents,
                   image_url: firstImage,
                   in_stock: product.in_stock,
+                  max_order_qty: product.max_order_qty,
                 }}
               />
 

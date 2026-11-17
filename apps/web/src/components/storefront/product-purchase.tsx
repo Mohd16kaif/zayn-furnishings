@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { MAX_ORDER_QTY } from "@zayn/shared";
 import { useCart } from "@/components/design/cart-provider";
-
-const QUANTITIES = Array.from({ length: 10 }, (_, index) => index + 1);
 
 export type ProductPurchaseData = {
   id: string;
@@ -13,6 +12,7 @@ export type ProductPurchaseData = {
   price_cents: number;
   image_url: string | null;
   in_stock: boolean;
+  max_order_qty: number;
 };
 
 export function ProductPurchase({
@@ -20,9 +20,27 @@ export function ProductPurchase({
 }: {
   product: ProductPurchaseData;
 }) {
-  const { add } = useCart();
+  const { add, items } = useCart();
   const [quantity, setQuantity] = useState(1);
-  const [toast, setToast] = useState<{ key: number } | null>(null);
+  const [toast, setToast] = useState<{ key: number; message: string } | null>(
+    null,
+  );
+
+  const inCart =
+    items.find((item) => item.productId === product.id)?.quantity ?? 0;
+  const maxOrderQuantity = Math.min(
+    MAX_ORDER_QTY,
+    Math.max(0, product.max_order_qty),
+  );
+  const remaining = Math.max(0, maxOrderQuantity - inCart);
+  const atMax = product.in_stock && maxOrderQuantity > 0 && remaining === 0;
+  const availableToAdd =
+    product.in_stock && maxOrderQuantity > 0 && remaining > 0;
+  const quantityOptions = Array.from(
+    { length: Math.max(1, remaining) },
+    (_, index) => index + 1,
+  );
+  const selectedQuantity = Math.min(quantity, Math.max(1, remaining));
 
   useEffect(() => {
     if (!toast) {
@@ -35,11 +53,11 @@ export function ProductPurchase({
   }, [toast]);
 
   function onAdd() {
-    if (!product.in_stock) {
+    if (!availableToAdd) {
       return;
     }
 
-    add(
+    const result = add(
       {
         productId: product.id,
         slug: product.slug,
@@ -47,9 +65,16 @@ export function ProductPurchase({
         price_cents: product.price_cents,
         image_url: product.image_url,
       },
-      quantity,
+      Math.min(selectedQuantity, remaining),
+      maxOrderQuantity,
     );
-    setToast({ key: Date.now() });
+
+    setToast({
+      key: Date.now(),
+      message: result.capped
+        ? `Only ${maxOrderQuantity} available. Your cart now has ${result.quantity}.`
+        : "Added to cart.",
+    });
   }
 
   return (
@@ -60,11 +85,11 @@ export function ProductPurchase({
           <select
             id="pdp-quantity"
             name="quantity"
-            value={quantity}
-            disabled={!product.in_stock}
+            value={selectedQuantity}
+            disabled={!availableToAdd}
             onChange={(event) => setQuantity(Number(event.target.value))}
           >
-            {QUANTITIES.map((value) => (
+            {quantityOptions.map((value) => (
               <option key={value} value={value}>
                 {value}
               </option>
@@ -76,20 +101,28 @@ export function ProductPurchase({
           type="button"
           className="zf-btn zf-btn--primary zf-pdp__add"
           onClick={onAdd}
-          disabled={!product.in_stock}
+          disabled={!availableToAdd}
           aria-label={
-            product.in_stock
-              ? `Add ${quantity} ${product.name} to cart`
-              : `${product.name} is sold out`
+            !product.in_stock
+              ? `${product.name} is sold out`
+              : atMax
+                ? "You already have all available pieces in your cart"
+                : `Add ${selectedQuantity} ${product.name} to cart`
           }
         >
           {product.in_stock ? "Add to cart" : "Sold out"}
         </button>
       </div>
 
+      {atMax ? (
+        <p className="zf-pdp__cart-max">
+          You already have all available pieces in your cart
+        </p>
+      ) : null}
+
       {toast ? (
         <div className="zf-toast" role="status">
-          <span>Added to cart.</span>
+          <span>{toast.message}</span>
           <Link className="zf-toast__link" href="/cart">
             View cart
           </Link>

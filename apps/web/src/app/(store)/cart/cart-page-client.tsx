@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from "react";
-import type { PublicCategoryNode } from "@zayn/shared";
+import { MAX_ORDER_QTY, type PublicCategoryNode } from "@zayn/shared";
 import {
   useCart,
   type CartItem,
@@ -29,7 +29,7 @@ import {
 } from "@/lib/deliveryClient";
 import { formatCents } from "@/lib/money";
 
-const MAX_QUANTITY = 10;
+const MAX_QUANTITY = MAX_ORDER_QTY;
 
 type CartPageClientProps = {
   categories: PublicCategoryNode[];
@@ -46,6 +46,7 @@ type CartRow = {
   unavailable: boolean;
   soldOut: boolean;
   included: boolean;
+  maxQty: number;
   lineTotalCents: number;
 };
 
@@ -58,6 +59,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
   const [validation, setValidation] = useState<CartValidation | null>(null);
   const [validatedBody, setValidatedBody] = useState("");
   const [validationError, setValidationError] = useState(false);
+  const [adjustmentNotice, setAdjustmentNotice] = useState(false);
   const [announcement, setAnnouncement] = useState("");
 
   const savedZip = useSyncExternalStore(
@@ -113,9 +115,22 @@ export function CartPageClient({ categories }: CartPageClientProps) {
           throw new Error("Cart validation failed");
         }
 
-        setValidation(data as CartValidation);
+        const parsed = data as CartValidation;
+        const adjusted = parsed.items.filter(
+          (item) => item.qty_adjusted && item.clamped_qty > 0,
+        );
+
+        setValidation(parsed);
         setValidatedBody(requestBody);
         setValidationError(false);
+
+        if (adjusted.length > 0) {
+          setAdjustmentNotice(true);
+
+          for (const entry of adjusted) {
+            setQuantity(entry.id, entry.clamped_qty);
+          }
+        }
       } catch {
         if (controller.signal.aborted) {
           return;
@@ -129,7 +144,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [requestBody]);
+  }, [requestBody, setQuantity]);
 
   const current = Boolean(
     validation && !validationError && validatedBody === requestBody,
@@ -152,6 +167,12 @@ export function CartPageClient({ categories }: CartPageClientProps) {
           server.sale_price_cents !== null &&
           server.sale_price_cents < server.price_cents;
         const soldOut = !server.in_stock;
+        const maxQty = Number.isFinite(server.max_qty)
+          ? server.max_qty
+          : MAX_QUANTITY;
+        const clampedQty = Number.isFinite(server.clamped_qty)
+          ? server.clamped_qty
+          : item.quantity;
 
         return {
           item,
@@ -164,7 +185,8 @@ export function CartPageClient({ categories }: CartPageClientProps) {
           unavailable: false,
           soldOut,
           included: !soldOut,
-          lineTotalCents: server.effective_price_cents * item.quantity,
+          maxQty,
+          lineTotalCents: server.effective_price_cents * clampedQty,
         };
       }
 
@@ -180,6 +202,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
           unavailable: true,
           soldOut: false,
           included: false,
+          maxQty: MAX_QUANTITY,
           lineTotalCents: 0,
         };
       }
@@ -195,6 +218,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
         unavailable: false,
         soldOut: false,
         included: true,
+        maxQty: MAX_QUANTITY,
         lineTotalCents: item.price_cents * item.quantity,
       };
     });
@@ -221,8 +245,12 @@ export function CartPageClient({ categories }: CartPageClientProps) {
       : 0;
   const estimatedTotalCents = subtotalCents + deliveryFeeCents;
 
+  function quantityLimit(row: CartRow): number {
+    return Math.max(1, Math.min(MAX_QUANTITY, row.maxQty));
+  }
+
   function changeQuantity(row: CartRow, next: number) {
-    const value = Math.min(MAX_QUANTITY, Math.max(1, next));
+    const value = Math.min(quantityLimit(row), Math.max(1, next));
 
     if (value === row.item.quantity) {
       return;
@@ -447,6 +475,12 @@ export function CartPageClient({ categories }: CartPageClientProps) {
           </p>
         ) : null}
 
+        {adjustmentNotice ? (
+          <p className="zf-cart-page__notice" role="status">
+            We adjusted some quantities to what is available.
+          </p>
+        ) : null}
+
         {unavailableCount > 0 ? (
           <p className="zf-cart-page__notice">
             Some items are no longer available and are excluded from your
@@ -543,7 +577,11 @@ export function CartPageClient({ categories }: CartPageClientProps) {
                           type="button"
                           className="zf-qty-stepper__btn"
                           aria-label={`Increase quantity for ${row.displayName}`}
-                          disabled={row.item.quantity >= MAX_QUANTITY}
+                          disabled={
+                            row.unavailable ||
+                            row.soldOut ||
+                            row.item.quantity >= quantityLimit(row)
+                          }
                           onClick={() =>
                             changeQuantity(row, row.item.quantity + 1)
                           }
@@ -551,6 +589,15 @@ export function CartPageClient({ categories }: CartPageClientProps) {
                           +
                         </button>
                       </div>
+
+                      {!row.unavailable &&
+                      !row.soldOut &&
+                      row.maxQty > 0 &&
+                      row.item.quantity >= row.maxQty ? (
+                        <span className="zf-cart-item__limit">
+                          Only {row.maxQty} available
+                        </span>
+                      ) : null}
 
                       <button
                         type="button"

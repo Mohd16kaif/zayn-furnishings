@@ -20,7 +20,7 @@ import {
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import type { PublicDeliveryCheck } from "@zayn/shared";
-import { evaluateDiscountCode } from "@zayn/shared";
+import { evaluateDiscountCode, maxOrderQty } from "@zayn/shared";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -780,6 +780,7 @@ publicRouter.get(
         price_cents: row.product.priceCents,
         sale_price_cents: row.product.salePriceCents,
         in_stock: row.product.stockQty > 0,
+        max_order_qty: maxOrderQty(row.product.stockQty),
         material: row.product.material,
         color: row.product.color,
         dimensions: {
@@ -869,6 +870,9 @@ publicRouter.post(
         primary_image_url: string | null;
         in_stock: boolean;
         available: true;
+        max_qty: number;
+        clamped_qty: number;
+        qty_adjusted: boolean;
       }> = [];
       let subtotalCents = 0;
 
@@ -880,6 +884,8 @@ publicRouter.post(
           continue;
         }
 
+        const maxQty = maxOrderQty(product.stockQty);
+        const clampedQty = Math.min(quantity, maxQty);
         const inStock = product.stockQty > 0;
         const effectivePriceCents =
           product.salePriceCents ?? product.priceCents;
@@ -894,11 +900,12 @@ publicRouter.post(
           primary_image_url: primaryImages.get(product.id) ?? null,
           in_stock: inStock,
           available: true,
+          max_qty: maxQty,
+          clamped_qty: clampedQty,
+          qty_adjusted: clampedQty < quantity,
         });
 
-        if (inStock) {
-          subtotalCents += effectivePriceCents * quantity;
-        }
+        subtotalCents += effectivePriceCents * clampedQty;
       }
 
       const delivery = await deliveryForOptionalZip(

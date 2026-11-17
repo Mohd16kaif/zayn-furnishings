@@ -8,10 +8,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { MAX_ORDER_QTY } from "@zayn/shared";
 
 const STORAGE_KEY = "zf-cart";
 const CHANGE_EVENT = "zf-cart-change";
-const MAX_QUANTITY = 10;
+const MAX_QUANTITY = MAX_ORDER_QTY;
 
 export type CartItem = {
   productId: string;
@@ -22,10 +23,20 @@ export type CartItem = {
   quantity: number;
 };
 
+export type AddToCartResult = {
+  added: number;
+  quantity: number;
+  capped: boolean;
+};
+
 export type CartContextValue = {
   items: CartItem[];
   count: number;
-  add: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
+  add: (
+    item: Omit<CartItem, "quantity">,
+    quantity?: number,
+    maxQuantity?: number,
+  ) => AddToCartResult;
   remove: (productId: string) => void;
   setQuantity: (productId: string, quantity: number) => void;
   clear: () => void;
@@ -44,6 +55,29 @@ function clampQuantity(quantity: number): number {
   }
 
   return Math.min(MAX_QUANTITY, Math.max(1, Math.round(quantity)));
+}
+
+function wholeQuantity(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+export function capCartQuantity(
+  currentQuantity: number,
+  requestedQuantity: number,
+  maxQuantity: number,
+): { quantity: number; capped: boolean } {
+  const current = wholeQuantity(currentQuantity);
+  const requested = wholeQuantity(requestedQuantity);
+  const limit = Math.min(MAX_QUANTITY, wholeQuantity(maxQuantity));
+
+  if (limit === 0) {
+    return { quantity: current, capped: requested > 0 };
+  }
+
+  const desired = current + requested;
+  const quantity = Math.min(limit, desired);
+
+  return { quantity, capped: desired > quantity };
 }
 
 function parseCart(raw: string | null): CartItem[] {
@@ -144,25 +178,38 @@ export function CartProvider({ children }: { children: ReactNode }) {
   );
 
   const add = useCallback(
-    (item: Omit<CartItem, "quantity">, quantity = 1) => {
-      const nextQuantity = clampQuantity(quantity);
+    (
+      item: Omit<CartItem, "quantity">,
+      quantity = 1,
+      maxQuantity = MAX_QUANTITY,
+    ): AddToCartResult => {
       const current = getSnapshot();
       const existing = current.find(
         (entry) => entry.productId === item.productId,
       );
+      const currentQuantity = existing?.quantity ?? 0;
+      const result = capCartQuantity(
+        currentQuantity,
+        quantity,
+        maxQuantity,
+      );
+      const added = result.quantity - currentQuantity;
+
+      if (result.quantity <= 0 || added === 0) {
+        return { ...result, added: 0 };
+      }
 
       const next = existing
         ? current.map((entry) =>
             entry.productId === item.productId
-              ? {
-                  ...entry,
-                  quantity: clampQuantity(entry.quantity + nextQuantity),
-                }
+              ? { ...entry, quantity: result.quantity }
               : entry,
           )
-        : [...current, { ...item, quantity: nextQuantity }];
+        : [...current, { ...item, quantity: result.quantity }];
 
       writeCart(next);
+
+      return { ...result, added };
     },
     [],
   );

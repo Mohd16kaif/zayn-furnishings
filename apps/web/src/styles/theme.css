@@ -4251,6 +4251,28 @@ html[data-zf-theme="dark"] .zf-skeleton::after {
   color: var(--muted);
 }
 
+.zf-pdp__stock-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.zf-pdp__stock-note {
+  color: var(--brand);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.zf-pdp__cart-max {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .zf-pdp__lede {
   max-width: 520px;
   color: var(--muted);
@@ -5016,6 +5038,13 @@ html[data-zf-theme="dark"] .zf-skeleton::after {
 .zf-cart-item__muted {
   color: var(--muted);
   font-size: 12px;
+}
+
+.zf-cart-item__limit {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .zf-cart-item__remove {

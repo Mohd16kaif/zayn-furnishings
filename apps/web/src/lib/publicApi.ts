@@ -1,4 +1,7 @@
 import type {
+  PublicCartValidatedItem,
+  PublicCartValidateItem,
+  PublicCartValidation,
   PublicCategoryNode,
   PublicDeliveryCheck,
   PublicHomeContent,
@@ -51,6 +54,7 @@ const EMPTY_PRODUCT_DETAIL: PublicProductDetail = {
   price_cents: 0,
   sale_price_cents: null,
   in_stock: false,
+  max_order_qty: 0,
   material: null,
   color: null,
   dimensions: {
@@ -108,29 +112,11 @@ const EMPTY_SEARCH_SUGGESTIONS: SearchSuggestions = {
   categories: [],
 };
 
-export type CartValidateItem = {
-  product_id: string;
-  quantity: number;
-};
+export type CartValidateItem = PublicCartValidateItem;
 
-export type CartValidatedItem = {
-  id: string;
-  slug: string;
-  name: string;
-  price_cents: number;
-  sale_price_cents: number | null;
-  effective_price_cents: number;
-  primary_image_url: string | null;
-  in_stock: boolean;
-  available: boolean;
-};
+export type CartValidatedItem = PublicCartValidatedItem;
 
-export type CartValidation = {
-  items: CartValidatedItem[];
-  unavailable: string[];
-  subtotal_cents: number;
-  delivery: PublicDeliveryCheck | null;
-};
+export type CartValidation = PublicCartValidation;
 
 export type ApiResult<T> = {
   ok: boolean;
