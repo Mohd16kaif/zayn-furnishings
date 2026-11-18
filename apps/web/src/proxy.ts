@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { IS_STAGING } from "@/lib/appEnv";
+import { readStoreOpen } from "@/lib/storeStatus";
 
 const CATEGORY_CACHE_TTL_MS = 60_000;
 const PRODUCT_CACHE_TTL_MS = 60_000;
@@ -195,13 +197,29 @@ async function handleProductRequest(
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const isAdminPath =
+    pathname === "/admin" || pathname.startsWith("/admin/");
 
-  if (pathname.startsWith("/c/")) {
-    return handleCategoryRequest(request);
-  }
+  if (!isAdminPath) {
+    const storeOpen = await readStoreOpen();
+    const closed = !storeOpen;
+    let response: NextResponse;
 
-  if (pathname.startsWith("/p/")) {
-    return handleProductRequest(request);
+    if (closed) {
+      response = NextResponse.next();
+    } else if (pathname.startsWith("/c/")) {
+      response = await handleCategoryRequest(request);
+    } else if (pathname.startsWith("/p/")) {
+      response = await handleProductRequest(request);
+    } else {
+      response = NextResponse.next();
+    }
+
+    if (IS_STAGING || closed) {
+      response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    }
+
+    return response;
   }
 
   const isLoginPage = pathname === "/admin/login";
@@ -247,5 +265,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin", "/admin/:path*", "/c/:slug", "/p/:slug"],
+  matcher: [
+    "/admin",
+    "/admin/:path*",
+    "/((?!api|_next/static|_next/image|admin|design-preview|.*\\..*).*)",
+  ],
 };

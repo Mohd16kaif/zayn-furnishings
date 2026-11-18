@@ -17,36 +17,43 @@ function jsonbValue(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
 }
 
-const settingsUpdateSchema = z.object({
-  store_name: z
-    .string()
-    .trim()
-    .min(1, "Store name is required.")
-    .max(80, "Store name must be 80 characters or fewer."),
-  phone: z
-    .string()
-    .trim()
-    .refine(
-      (value) => value === "" || PHONE_PATTERN.test(value),
-      "Enter 7-20 characters using digits, spaces, +, ( ) or -.",
-    ),
-  email: z
-    .string()
-    .trim()
-    .max(200, "Email must be 200 characters or fewer.")
-    .refine(
-      (value) =>
-        value === "" || z.string().email().safeParse(value).success,
-      "Enter a valid email address.",
-    ),
-  free_delivery_threshold_cents: z
-    .number()
-    .int("Enter a whole number of dollars.")
-    .min(0, "The threshold cannot be negative.")
-    .max(100000000, "The threshold is too large.")
-    .nullable(),
-  show_financing: z.boolean(),
-});
+const settingsUpdateSchema = z
+  .object({
+    store_name: z
+      .string()
+      .trim()
+      .min(1, "Store name is required.")
+      .max(80, "Store name must be 80 characters or fewer."),
+    phone: z
+      .string()
+      .trim()
+      .refine(
+        (value) => value === "" || PHONE_PATTERN.test(value),
+        "Enter 7-20 characters using digits, spaces, +, ( ) or -.",
+      ),
+    email: z
+      .string()
+      .trim()
+      .max(200, "Email must be 200 characters or fewer.")
+      .refine(
+        (value) =>
+          value === "" || z.string().email().safeParse(value).success,
+        "Enter a valid email address.",
+      ),
+    free_delivery_threshold_cents: z
+      .number()
+      .int("Enter a whole number of dollars.")
+      .min(0, "The threshold cannot be negative.")
+      .max(100000000, "The threshold is too large.")
+      .nullable(),
+    show_financing: z.boolean(),
+    store_open: z.boolean(),
+  })
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Choose at least one setting to update.",
+  );
 
 export const adminSettingsRouter = Router();
 
@@ -88,19 +95,40 @@ adminSettingsRouter.patch(
       const settings = parsed.data;
 
       await db.transaction(async (tx) => {
-        const values: Array<{ key: string; value: unknown }> = [
-          { key: "store_name", value: settings.store_name },
-          { key: "phone", value: settings.phone },
-          { key: "email", value: settings.email },
-          {
+        const values: Array<{ key: string; value: unknown }> = [];
+
+        if (settings.store_name !== undefined) {
+          values.push({ key: "store_name", value: settings.store_name });
+        }
+
+        if (settings.phone !== undefined) {
+          values.push({ key: "phone", value: settings.phone });
+        }
+
+        if (settings.email !== undefined) {
+          values.push({ key: "email", value: settings.email });
+        }
+
+        if (settings.free_delivery_threshold_cents !== undefined) {
+          values.push({
             key: "free_delivery_threshold_cents",
             value: settings.free_delivery_threshold_cents,
-          },
-          {
+          });
+        }
+
+        if (settings.show_financing !== undefined) {
+          values.push({
             key: "show_financing",
             value: settings.show_financing,
-          },
-        ];
+          });
+        }
+
+        if (settings.store_open !== undefined) {
+          values.push({
+            key: "store_open",
+            value: settings.store_open,
+          });
+        }
 
         for (const item of values) {
           await tx
@@ -125,9 +153,7 @@ adminSettingsRouter.patch(
           entityId: null,
           details: {
             fields: Object.keys(settings),
-            free_delivery_threshold_cents:
-              settings.free_delivery_threshold_cents,
-            show_financing: settings.show_financing,
+            ...settings,
           },
         });
       });

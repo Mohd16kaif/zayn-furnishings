@@ -17,6 +17,7 @@ import {
   dollarsToCents,
 } from "@/lib/adminMoney";
 import { revalidateStorefront } from "@/lib/actions/revalidateStorefront";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -41,6 +42,9 @@ export function SettingsClient() {
   const [thresholdDollars, setThresholdDollars] = useState("");
   const [noFreeDelivery, setNoFreeDelivery] = useState(false);
   const [showFinancing, setShowFinancing] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [storeOpenSaving, setStoreOpenSaving] = useState(false);
+  const [confirmOpenStore, setConfirmOpenStore] = useState(false);
 
   const applySettings = useCallback((data: AdminStoreSettings) => {
     setSettings(data);
@@ -52,6 +56,7 @@ export function SettingsClient() {
     );
     setNoFreeDelivery(data.free_delivery_threshold_cents === null);
     setShowFinancing(data.show_financing);
+    setStoreOpen(data.store_open);
   }, []);
 
   const load = useCallback(async () => {
@@ -135,6 +140,7 @@ export function SettingsClient() {
             email: email.trim(),
             free_delivery_threshold_cents: thresholdCents,
             show_financing: showFinancing,
+            store_open: storeOpen,
           },
         },
       );
@@ -156,6 +162,40 @@ export function SettingsClient() {
     }
   }
 
+  async function persistStoreOpen(next: boolean) {
+    setStoreOpenSaving(true);
+    setNotice("");
+    setActionError("");
+
+    try {
+      const updated = await adminFetch<AdminStoreSettings>(
+        "/admin/settings",
+        {
+          method: "PATCH",
+          json: { store_open: next },
+        },
+      );
+
+      setSettings(updated);
+      setStoreOpen(updated.store_open);
+      await revalidateStorefront();
+      setNotice(
+        updated.store_open
+          ? "The store is open to customers."
+          : "The store is now closed.",
+      );
+    } catch (saveError) {
+      setActionError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to change the store status.",
+      );
+    } finally {
+      setStoreOpenSaving(false);
+      setConfirmOpenStore(false);
+    }
+  }
+
   return (
     <div className="max-w-3xl">
       <p className="text-sm font-medium uppercase tracking-[0.2em] text-stone-400">
@@ -165,7 +205,8 @@ export function SettingsClient() {
         Settings
       </h1>
       <p className="mt-2 text-sm leading-6 text-stone-600">
-        Store contact details, delivery pricing, and financing options.
+        Store status, contact details, delivery pricing, and financing
+        options.
       </p>
 
       {isStaff ? (
@@ -355,6 +396,45 @@ export function SettingsClient() {
           <div className="flex items-start justify-between gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4">
             <div>
               <label
+                htmlFor="settings-store-open"
+                className="text-sm font-medium text-stone-800"
+              >
+                Open the store to customers
+              </label>
+              <p id="settings-store-open-help" className={helpClass}>
+                When this is off, visitors see a Coming soon page, checkout
+                is disabled and search engines are told not to list the
+                site. You can still use the admin.
+              </p>
+            </div>
+            <label className="relative mt-1 inline-flex cursor-pointer items-center">
+              <input
+                id="settings-store-open"
+                type="checkbox"
+                role="switch"
+                checked={storeOpen}
+                onChange={(event) => {
+                  if (event.target.checked) {
+                    setConfirmOpenStore(true);
+                  } else {
+                    void persistStoreOpen(false);
+                  }
+                }}
+                disabled={isStaff || storeOpenSaving}
+                className="peer sr-only"
+                aria-label="Open the store to customers"
+                aria-describedby="settings-store-open-help"
+              />
+              <span
+                aria-hidden="true"
+                className="relative h-6 w-11 rounded-full bg-stone-300 transition peer-checked:bg-stone-900 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-stone-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition after:content-[''] peer-checked:after:translate-x-5 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
+              />
+            </label>
+          </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4">
+            <div>
+              <label
                 htmlFor="settings-financing"
                 className="text-sm font-medium text-stone-800"
               >
@@ -397,6 +477,18 @@ export function SettingsClient() {
           ) : null}
         </form>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmOpenStore}
+        title="Open the store to customers"
+        description="Customers will be able to see the store and place orders. Is everything ready?"
+        confirmLabel="Open store"
+        busy={storeOpenSaving}
+        onCancel={() => setConfirmOpenStore(false)}
+        onConfirm={() => {
+          void persistStoreOpen(true);
+        }}
+      />
     </div>
   );
 }

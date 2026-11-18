@@ -1,5 +1,7 @@
 import "dotenv/config";
+import { resolveAppEnv } from "@zayn/shared";
 import { z } from "zod";
+import { liveStripeKeyOutsideProductionError } from "../lib/stripeKeyGuard";
 
 const optionalString = z
   .string()
@@ -13,6 +15,7 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  APP_ENV: optionalString,
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: optionalString,
   SUPABASE_URL: optionalString,
@@ -76,5 +79,16 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data;
+const appEnv = resolveAppEnv(parsed.data.APP_ENV, parsed.data.NODE_ENV);
+const stripeKeyError = liveStripeKeyOutsideProductionError(
+  appEnv,
+  parsed.data.STRIPE_SECRET_KEY,
+);
+
+if (stripeKeyError) {
+  console.error(stripeKeyError);
+  process.exit(1);
+}
+
+export const env = { ...parsed.data, APP_ENV: appEnv };
 export type Env = typeof env;

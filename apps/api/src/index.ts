@@ -13,6 +13,7 @@ import { adminOrdersRouter } from "./routes/adminOrders";
 import { adminProductsRouter } from "./routes/adminProducts";
 import { adminSettingsRouter } from "./routes/adminSettings";
 import { activePhoneVerifierName } from "./lib/phoneVerifier";
+import { testStripeKeyInProductionWarning } from "./lib/stripeKeyGuard";
 import { authRouter } from "./routes/auth";
 import { healthRouter } from "./routes/health";
 import { ordersRouter } from "./routes/orders";
@@ -57,7 +58,18 @@ app.use("/admin", adminOrdersRouter);
 app.use("/admin", adminDashboardRouter);
 app.use("/admin", adminProductsRouter);
 
+console.log(`App environment: ${env.APP_ENV}`);
 console.log(`Phone verifier: ${activePhoneVerifierName}`);
+
+const stripeKeyWarning = testStripeKeyInProductionWarning(
+  env.APP_ENV,
+  env.STRIPE_SECRET_KEY,
+);
+
+if (stripeKeyWarning) {
+  console.warn(stripeKeyWarning);
+}
+
 console.log(
   env.STRIPE_WEBHOOK_SECRET
     ? `Stripe webhook secret configured, ends ...${env.STRIPE_WEBHOOK_SECRET.slice(-4)}`

@@ -18,6 +18,7 @@ export type AdminStoreSettings = {
   email: string;
   free_delivery_threshold_cents: number | null;
   show_financing: boolean;
+  store_open: boolean;
 };
 
 export type AdminDeliveryZone = {

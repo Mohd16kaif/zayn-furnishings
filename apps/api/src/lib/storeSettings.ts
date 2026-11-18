@@ -1,5 +1,7 @@
-import type { Executor } from "./adminCatalog";
+import { defaultStoreOpen, type AppEnv } from "@zayn/shared";
+import { env } from "../config/env";
 import { storeSettings } from "../db/schema";
+import type { Executor } from "./adminCatalog";
 
 export type StoreSettingsValues = {
   store_name: string;
@@ -7,15 +9,21 @@ export type StoreSettingsValues = {
   email: string;
   free_delivery_threshold_cents: number | null;
   show_financing: boolean;
+  store_open: boolean;
 };
 
-export const DEFAULT_STORE_SETTINGS: StoreSettingsValues = {
-  store_name: "Zayn Furnishings",
-  phone: "",
-  email: "",
-  free_delivery_threshold_cents: null,
-  show_financing: false,
-};
+export function defaultStoreSettings(
+  appEnv: AppEnv,
+): StoreSettingsValues {
+  return {
+    store_name: "Zayn Furnishings",
+    phone: "",
+    email: "",
+    free_delivery_threshold_cents: null,
+    show_financing: false,
+    store_open: defaultStoreOpen(appEnv),
+  };
+}
 
 export function coerceSettingValue(
   key: string,
@@ -37,6 +45,7 @@ export function coerceSettingValue(
         ? value
         : undefined;
     case "show_financing":
+    case "store_open":
       return typeof value === "boolean" ? value : undefined;
     default:
       return undefined;
@@ -45,9 +54,10 @@ export function coerceSettingValue(
 
 export async function readStoreSettings(
   executor: Executor,
+  appEnv: AppEnv = env.APP_ENV,
 ): Promise<StoreSettingsValues> {
   const rows = await executor.select().from(storeSettings);
-  const result: StoreSettingsValues = { ...DEFAULT_STORE_SETTINGS };
+  const result: StoreSettingsValues = defaultStoreSettings(appEnv);
 
   for (const row of rows) {
     const value = coerceSettingValue(row.key, row.value);
@@ -73,6 +83,9 @@ export async function readStoreSettings(
         break;
       case "show_financing":
         result.show_financing = value as boolean;
+        break;
+      case "store_open":
+        result.store_open = value as boolean;
         break;
       default:
         break;

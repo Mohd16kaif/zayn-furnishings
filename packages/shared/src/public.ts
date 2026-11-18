@@ -27,6 +27,7 @@ export interface PublicStoreSettings {
   email: string;
   free_delivery_threshold_cents: number | null;
   show_financing: boolean;
+  store_open: boolean;
 }
 
 export interface PublicContentBlock {

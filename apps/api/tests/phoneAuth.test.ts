@@ -42,16 +42,18 @@ describe("DevStubVerifier", () => {
     );
   });
 
-  it("accepts only the fixed code for a valid US number", async () => {
-    const verifier = new DevStubVerifier("development");
+  it("accepts only the fixed code in development and staging", async () => {
+    for (const appEnv of ["development", "staging"]) {
+      const verifier = new DevStubVerifier(appEnv);
 
-    await expect(verifier.start("+14155550123")).resolves.toBeUndefined();
-    await expect(verifier.check("+14155550123", "123456")).resolves.toBe(
-      true,
-    );
-    await expect(verifier.check("+14155550123", "000000")).resolves.toBe(
-      false,
-    );
+      await expect(verifier.start("+14155550123")).resolves.toBeUndefined();
+      await expect(verifier.check("+14155550123", "123456")).resolves.toBe(
+        true,
+      );
+      await expect(verifier.check("+14155550123", "000000")).resolves.toBe(
+        false,
+      );
+    }
   });
 });
 
@@ -62,23 +64,25 @@ describe("selectPhoneVerifierName", () => {
     verifyServiceSid: "VA_test",
   };
 
-  it("selects Twilio when all credentials are present", () => {
-    expect(selectPhoneVerifierName(credentials, "development")).toBe(
-      "twilio",
-    );
-    expect(selectPhoneVerifierName(credentials, "production")).toBe(
-      "twilio",
-    );
+  it("selects Twilio when all credentials are present in every environment", () => {
+    for (const appEnv of ["development", "staging", "production"]) {
+      expect(selectPhoneVerifierName(credentials, appEnv)).toBe("twilio");
+    }
   });
 
-  it("selects the dev stub outside production when credentials are incomplete", () => {
+  it("selects the dev stub in development and staging when credentials are incomplete", () => {
     expect(
       selectPhoneVerifierName(
         { accountSid: "AC_test", authToken: "token" },
         "development",
       ),
     ).toBe("dev-stub");
-    expect(selectPhoneVerifierName({}, "test")).toBe("dev-stub");
+    expect(
+      selectPhoneVerifierName(
+        { accountSid: "AC_test", verifyServiceSid: "VA_test" },
+        "staging",
+      ),
+    ).toBe("dev-stub");
   });
 
   it("returns unavailable in production without Twilio", () => {

@@ -8,6 +8,7 @@ import {
   payments,
   products,
   stockMovements,
+  storeSettings,
 } from "../../src/db/schema";
 
 export type FakeRow = Record<string, unknown>;
@@ -22,6 +23,7 @@ export type FakeRefundState = {
   stockMovements: FakeRow[];
   audits: FakeRow[];
   notifications: FakeRow[];
+  storeSettings: FakeRow[];
   sequence: number;
 };
 
@@ -38,6 +40,7 @@ export function createFakeRefundState(
     stockMovements: [],
     audits: [],
     notifications: [],
+    storeSettings: [],
     sequence: 0,
     ...overrides,
   };
@@ -83,6 +86,10 @@ function rowsForTable(
 
   if (table === notificationsLog) {
     return state.notifications;
+  }
+
+  if (table === storeSettings) {
+    return state.storeSettings;
   }
 
   return null;

@@ -1110,11 +1110,12 @@ publicRouter.get(
 
 publicRouter.get(
   "/settings",
-  cacheGet,
   async (_req: Request, res: Response) => {
     if (!requireDatabase(res)) {
       return;
     }
+
+    res.set("Cache-Control", "no-store");
 
     try {
       const settings = await readStoreSettings(db!);

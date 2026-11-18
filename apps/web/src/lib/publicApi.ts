@@ -1,21 +1,24 @@
-import type {
-  PublicCartValidatedItem,
-  PublicCartValidateItem,
-  PublicCartValidation,
-  PublicCategoryNode,
-  PublicDeliveryCheck,
-  PublicHomeContent,
-  PublicProductCard,
-  PublicProductDetail,
-  PublicProductList,
-  PublicStoreSettings,
+import {
+  defaultStoreOpen,
+  type PublicCartValidatedItem,
+  type PublicCartValidateItem,
+  type PublicCartValidation,
+  type PublicCategoryNode,
+  type PublicDeliveryCheck,
+  type PublicHomeContent,
+  type PublicProductCard,
+  type PublicProductDetail,
+  type PublicProductList,
+  type PublicStoreSettings,
 } from "@zayn/shared";
+import { APP_ENV } from "@/lib/appEnv";
 
 /**
  * Server-side data layer for the public API.
  *
  * Every helper:
- * - fetches GET <NEXT_PUBLIC_API_URL>/api/public/... with `revalidate: 60`
+ * - fetches GET <NEXT_PUBLIC_API_URL>/api/public/... with a short revalidate
+ *   window (5 seconds for settings, 60 seconds for catalog content)
  * - sends `x-storefront-key` (from the non-public STOREFRONT_API_KEY secret)
  *   and, for visitor-triggered routes, the forwarded `x-visitor-ip`
  * - NEVER throws: a down API returns a typed safe fallback so a page can
@@ -24,6 +27,7 @@ import type {
 
 const DEFAULT_API_URL = "http://localhost:4000";
 const REVALIDATE_SECONDS = 60;
+const SETTINGS_REVALIDATE_SECONDS = 5;
 const API_TIMEOUT_MS = 8_000;
 
 export const PUBLIC_SETTINGS_TAG = "public-settings";
@@ -36,6 +40,7 @@ export const DEFAULT_STORE_SETTINGS: PublicStoreSettings = {
   email: "",
   free_delivery_threshold_cents: null,
   show_financing: false,
+  store_open: defaultStoreOpen(APP_ENV),
 };
 
 const EMPTY_PRODUCT_LIST: PublicProductList = {
@@ -167,7 +172,8 @@ function isValidSettings(value: unknown): value is PublicStoreSettings {
     typeof candidate.email === "string" &&
     (candidate.free_delivery_threshold_cents === null ||
       typeof candidate.free_delivery_threshold_cents === "number") &&
-    typeof candidate.show_financing === "boolean"
+    typeof candidate.show_financing === "boolean" &&
+    typeof candidate.store_open === "boolean"
   );
 }
 
@@ -317,7 +323,7 @@ export function getSettings(): Promise<ApiResult<PublicStoreSettings>> {
     "/settings",
     DEFAULT_STORE_SETTINGS,
     isSettings,
-    REVALIDATE_SECONDS,
+    SETTINGS_REVALIDATE_SECONDS,
     null,
     [PUBLIC_SETTINGS_TAG],
   );

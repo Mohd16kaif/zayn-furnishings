@@ -8,7 +8,15 @@ import { themeFontClass, themeSeedScript } from "@/components/design/fonts";
 import { ScrollProgress } from "@/components/motion/scroll-progress";
 import { SmoothScroll } from "@/components/motion/smooth-scroll";
 import { ThemeProvider } from "@/components/design/theme-provider";
+import {
+  StagingBanner,
+  StorePreviewBanner,
+} from "@/components/design/site-mode-banners";
+import { ComingSoon } from "@/components/storefront/coming-soon";
+import { hasAdminPreviewSession } from "@/lib/adminPreview";
+import { IS_STAGING } from "@/lib/appEnv";
 import { getCurrentCustomer } from "@/lib/authServer";
+import { getSettings } from "@/lib/publicApi";
 import "@/styles/theme.css";
 
 // The storefront shell fetches live catalog data, so navigation into this
@@ -20,7 +28,26 @@ export default async function StoreLayout({
 }: {
   children: ReactNode;
 }) {
-  const customer = await getCurrentCustomer();
+  const [customer, settingsResult] = await Promise.all([
+    getCurrentCustomer(),
+    getSettings(),
+  ]);
+  const settings = settingsResult.data;
+  const closed = !settings.store_open;
+  const preview = closed ? await hasAdminPreviewSession() : false;
+
+  if (closed && !preview) {
+    return (
+      <div id="top">
+        {IS_STAGING ? <StagingBanner /> : null}
+        <ComingSoon
+          storeName={settings.store_name}
+          email={settings.email}
+          phone={settings.phone}
+        />
+      </div>
+    );
+  }
 
   return (
     <div id="top">
@@ -34,6 +61,8 @@ export default async function StoreLayout({
               Skip to content
             </a>
 
+            {IS_STAGING ? <StagingBanner /> : null}
+            {closed && preview ? <StorePreviewBanner /> : null}
             <AnnouncementBar />
             <SiteHeader />
 

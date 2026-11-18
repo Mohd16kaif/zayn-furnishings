@@ -28,6 +28,7 @@ import { computeDeliveryQuote } from "../lib/deliveryPricing";
 import { primaryImagesByProduct } from "../lib/productImages";
 import { reconcileOrderPayment } from "../lib/reconcileOrderPayment";
 import { STRIPE_API_VERSION, stripe } from "../lib/stripe";
+import { readStoreSettings } from "../lib/storeSettings";
 
 const ORDER_RATE_LIMIT = 10;
 const ORDER_RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -173,6 +174,13 @@ ordersRouter.post(
 
     if (!db) {
       res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    const storeSettings = await readStoreSettings(db);
+
+    if (!storeSettings.store_open) {
+      res.status(503).json({ error: "The store is not open yet." });
       return;
     }
 

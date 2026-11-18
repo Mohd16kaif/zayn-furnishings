@@ -154,6 +154,16 @@ async function postWebhook() {
 }
 
 describe("charge.refunded webhook", () => {
+  it("keeps processing when the store is closed", async () => {
+    state.storeSettings = [{ key: "store_open", value: false }];
+
+    const response = await postWebhook();
+
+    expect(response.status).toBe(200);
+    expect(state.orders[0].status).toBe("partially_refunded");
+    expect(state.payments).toHaveLength(2);
+  });
+
   it("uses the shared ledger for a dashboard-only refund without restocking", async () => {
     const response = await postWebhook();
 

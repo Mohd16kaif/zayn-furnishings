@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
-import { getCategories, getProducts } from "@/lib/publicApi";
+import { connection } from "next/server";
+import { IS_STAGING } from "@/lib/appEnv";
+import { getCategories, getProducts, getSettings } from "@/lib/publicApi";
 
 const PRODUCT_PAGE_SIZE = 48;
 const MAX_PRODUCT_PAGES = 1000;
@@ -72,6 +74,13 @@ async function productSlugs(): Promise<string[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  await connection();
+  const { data: settings } = await getSettings();
+
+  if (IS_STAGING || !settings.store_open) {
+    return [];
+  }
+
   const [{ data: categories }, products, activeProducts, saleProducts] =
     await Promise.all([
       getCategories(),

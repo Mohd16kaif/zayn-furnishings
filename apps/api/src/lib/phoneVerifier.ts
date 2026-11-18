@@ -17,18 +17,18 @@ export interface PhoneVerifierConfig {
 
 /**
  * Pure selection rule: Twilio wins only when all three credentials exist.
- * Production without Twilio is unavailable; non-production falls back to
- * the fixed-code development stub.
+ * Production without Twilio is unavailable; development and staging fall back
+ * to the fixed-code development stub.
  */
 export function selectPhoneVerifierName(
   config: PhoneVerifierConfig,
-  nodeEnv: string,
+  appEnv: string,
 ): PhoneVerifierName {
   if (config.accountSid && config.authToken && config.verifyServiceSid) {
     return "twilio";
   }
 
-  return nodeEnv === "production" ? "unavailable" : "dev-stub";
+  return appEnv === "production" ? "unavailable" : "dev-stub";
 }
 
 export class TwilioVerifier implements PhoneVerifier {
@@ -66,8 +66,8 @@ export class TwilioVerifier implements PhoneVerifier {
 }
 
 export class DevStubVerifier implements PhoneVerifier {
-  constructor(nodeEnv: string = env.NODE_ENV) {
-    if (nodeEnv === "production") {
+  constructor(appEnv: string = env.APP_ENV) {
+    if (appEnv === "production") {
       throw new Error("DevStubVerifier cannot be used in production.");
     }
   }
@@ -90,7 +90,7 @@ function createPhoneVerifier(): PhoneVerifier | null {
       authToken: env.TWILIO_AUTH_TOKEN,
       verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID,
     },
-    env.NODE_ENV,
+    env.APP_ENV,
   );
 
   if (name === "twilio") {
@@ -102,7 +102,7 @@ function createPhoneVerifier(): PhoneVerifier | null {
   }
 
   if (name === "dev-stub") {
-    return new DevStubVerifier(env.NODE_ENV);
+    return new DevStubVerifier(env.APP_ENV);
   }
 
   return null;
@@ -119,6 +119,6 @@ export const activePhoneVerifierName: PhoneVerifierName = verifier
         authToken: env.TWILIO_AUTH_TOKEN,
         verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID,
       },
-      env.NODE_ENV,
+      env.APP_ENV,
     )
   : "unavailable";
