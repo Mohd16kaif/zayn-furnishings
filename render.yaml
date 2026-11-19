@@ -14,7 +14,7 @@ services:
     region: ohio
     plan: starter
     branch: main
-    autoDeploy: true
+    autoDeployTrigger: commit
     healthCheckPath: /health
     buildCommand: pnpm install --frozen-lockfile --prod=false && pnpm --filter @zayn/shared build && pnpm --filter @zayn/api build
     startCommand: pnpm --filter @zayn/api start
@@ -55,49 +55,3 @@ services:
       - key: TWILIO_VERIFY_SERVICE_SID
         sync: false
 
-  - type: web
-    name: zayn-api-production
-    runtime: node
-    region: ohio
-    plan: starter
-    branch: production
-    autoDeploy: true
-    healthCheckPath: /health
-    buildCommand: pnpm install --frozen-lockfile --prod=false && pnpm --filter @zayn/shared build && pnpm --filter @zayn/api build
-    startCommand: pnpm --filter @zayn/api start
-    envVars:
-      # Pinned to the Node version used for local development.
-      - key: NODE_VERSION
-        value: "24.15.0"
-      - key: NODE_ENV
-        value: production
-      - key: APP_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: OWNER_EMAIL
-        sync: false
-      - key: WEB_ORIGIN
-        sync: false
-      - key: STOREFRONT_API_KEY
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM
-        sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: TWILIO_ACCOUNT_SID
-        sync: false
-      - key: TWILIO_AUTH_TOKEN
-        sync: false
-      - key: TWILIO_VERIFY_SERVICE_SID
-        sync: false

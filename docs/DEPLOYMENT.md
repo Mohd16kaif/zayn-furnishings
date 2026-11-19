@@ -2,7 +2,8 @@
 
 This guide covers the staging stack and the later production stack:
 
-- API: Render web service (Node runtime), built from `render.yaml`
+- API: Render web service (Node runtime); `render.yaml` deploys staging only,
+  and `docs/render.production.example.yaml` holds the production reference for later
 - Web: Vercel project, root directory `apps/web`, built from `apps/web/vercel.json`
 - Database and Auth: Supabase
 - Payments: Stripe
@@ -17,7 +18,7 @@ Vercel dashboards.
 
 | | Staging | Production |
 | --- | --- | --- |
-| API service | `zayn-api-staging` on Render | `zayn-api-production` on Render |
+| API service | `zayn-api-staging` on Render (from `render.yaml`) | `zayn-api-production` (reference only in `docs/render.production.example.yaml`; not created yet) |
 | API branch | `main` | `production` |
 | Web project | `zayn-web-staging` on Vercel | `zayn-web-production` on Vercel |
 | Web branch | `main` | `production` |
@@ -30,19 +31,21 @@ Vercel dashboards.
 Use two separate Supabase projects. Do not point staging at the production
 database, even for a quick test.
 
-The real Render URL for each service is shown in the Render Dashboard after the
-service is created. The real Vercel URL is shown after the first deployment.
+The real Render URL is shown in the Render Dashboard after each service is
+created. The real Vercel URL is shown after the first deployment.
 
 ## 1. Render API environment variables
 
-All of these are declared in `render.yaml`. Values marked `sync: false` are
-prompted for during the first Blueprint sync and are not stored in Git.
+All of these are declared in `render.yaml` for staging and in
+`docs/render.production.example.yaml` for the production reference. Values
+marked `sync: false` are prompted for during the Blueprint sync and are not
+stored in Git.
 
 | Variable | What it is | Where to get it | Staging value | Production value |
 | --- | --- | --- | --- | --- |
-| `APP_ENV` | App mode used by shared code (`development`, `staging`, `production`) | Set in `render.yaml` | `staging` | `production` |
-| `NODE_ENV` | Node runtime mode; turns on the production config checks | Set in `render.yaml` | `production` | `production` |
-| `NODE_VERSION` | Node version Render installs | Set in `render.yaml`; Render supports this variable | `24.15.0` | `24.15.0` |
+| `APP_ENV` | App mode used by shared code (`development`, `staging`, `production`) | Set in `render.yaml` (staging) or the production example | `staging` | `production` |
+| `NODE_ENV` | Node runtime mode; turns on the production config checks | Set in `render.yaml` (staging) or the production example | `production` | `production` |
+| `NODE_VERSION` | Node version Render installs | Set in `render.yaml` (staging) or the production example; Render supports this variable | `24.15.0` | `24.15.0` |
 | `PORT` | HTTP port | Render provides it automatically | Do not set | Do not set |
 | `DATABASE_URL` | Supabase Postgres connection string | Supabase project -> Connect -> Session pooler URI (port `5432`) | Staging Supabase project | Production Supabase project |
 | `SUPABASE_URL` | Supabase project URL | Supabase -> Project Settings -> API | Staging project URL | Production project URL |
@@ -187,11 +190,22 @@ For each environment's Supabase project:
 5. The service role key belongs only in the Render API service. Never expose it
    to the web project or the browser.
 
-## 5. Deploy the API on Render
+## 5. Deploy the API on Render (staging first)
+
+`render.yaml` defines only the staging API service. The production service is
+reference-only until you add it later.
 
 1. Commit and push this repository to GitHub.
-2. Create the `production` branch now (the production service in `render.yaml`
-   points at it):
+2. In Render, choose New -> Blueprint, select this repository, and apply
+   `render.yaml`. This creates only `zayn-api-staging` on branch `main`.
+3. Enter the `sync: false` values for the staging service when prompted.
+4. Wait for the deploy. The health check is `GET /health`. A response with
+   `"status": "ok"` and `"db": true` means the API and database are connected.
+5. Keep production off until staging has been checked and signed off.
+
+Later, when the client's production account is ready:
+
+1. Create the `production` branch:
 
 ```powershell
 git switch main
@@ -201,18 +215,19 @@ git push -u origin production
 git switch main
 ```
 
-3. In Render, choose New -> Blueprint, select this repository, and apply
-   `render.yaml`.
-4. Enter the `sync: false` values for both services when prompted. Use the
-   staging values only on `zayn-api-staging` and the production values only on
+2. Copy the production service definition from
+   `docs/render.production.example.yaml` into the `services:` list in
+   `render.yaml`, or create the service by hand with the same settings. That
+   example file is reference only and is not read by Render.
+3. Apply the Blueprint again and enter the production values for
    `zayn-api-production`.
-5. Wait for both deploys. The health check is `GET /health`. A response with
-   `"status": "ok"` and `"db": true` means the API and database are connected.
+4. Keep the environment variable names, build command, and start command
+   consistent with the example file.
 
 Important:
 
-- The region is `ohio` for both services. A Render service's region cannot be
-  changed after creation.
+- The region is `ohio` for the staging service and the production example. A
+  Render service's region cannot be changed after creation.
 - The build command installs with the frozen lockfile and includes dev
   dependencies (`--prod=false`), because the TypeScript compiler and build
   tools are dev dependencies.
@@ -247,8 +262,8 @@ use previews.
 
 - `main` is the integration branch. It deploys the staging API and staging web
   project automatically.
-- `production` is the release branch. It deploys the production API and
-  production web project.
+- `production` is the release branch. Once the production services are set up,
+  it deploys the production API and production web project.
 - Merge `main` into `production` only after staging has been checked.
 - Do not commit directly to `production` except for an emergency fix that is
   also merged back into `main`.
@@ -327,14 +342,6 @@ dashboards before the first real deploy.
 
 Render:
 
-- `plan: starter` is kept because it was requested. Current public Render plan
-  documentation lists compute plan IDs such as `0.5c-512mb` and `1c-2g`; the
-  older `starter` name may or may not still be accepted by Blueprint
-  validation. If the Blueprint rejects it, choose the equivalent Starter plan
-  in the Dashboard and update `render.yaml`.
-- `autoDeploy` is accepted but deprecated in the current Blueprint reference in
-  favor of `autoDeployTrigger: commit`. Confirm the Blueprint sync keeps
-  automatic deploys on.
 - Render's Node runtime installs pnpm automatically based on the lockfile and
   `packageManager` field. The exact pnpm/corepack behavior was not tested
   against Render here. If the build fails because pnpm is missing or the wrong
