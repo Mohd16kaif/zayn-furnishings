@@ -88,13 +88,17 @@ together.
 
 ### `apps/web/.env`
 
-| Variable              | Notes                                  |
-| --------------------- | -------------------------------------- |
-| `NEXT_PUBLIC_API_URL` | Base URL of the API (e.g. `http://localhost:4000`) |
+| Variable                        | Notes                                  |
+| ------------------------------- | -------------------------------------- |
+| `NEXT_PUBLIC_API_URL`           | Base URL of the API (e.g. `http://localhost:4000`) |
+| `APPLE_PAY_DOMAIN_ASSOCIATION`  | Server-only Apple Pay domain association file contents; never `NEXT_PUBLIC_` |
 
 Until `DATABASE_URL` is set, `GET /health` returns `db: false` — this is expected.
 
 ## Deploy (later)
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the staging and production
+runbooks.
 
 - Web → Vercel (root `apps/web`)
 - API → Render (root `apps/api`)
