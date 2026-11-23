@@ -39,7 +39,11 @@ const UNAUTHORIZED = { error: "Unauthorized" };
 
 export const adminCodeAuthRouter = Router();
 
-adminCodeAuthRouter.use((req: Request, res: Response, next) => {
+function requireStorefrontKey(
+  req: Request,
+  res: Response,
+  next: () => void,
+): void {
   res.set("Cache-Control", "no-store");
 
   if (!storefrontKeyMatches(req)) {
@@ -48,10 +52,11 @@ adminCodeAuthRouter.use((req: Request, res: Response, next) => {
   }
 
   next();
-});
+}
 
 adminCodeAuthRouter.post(
   "/auth/code/request",
+  requireStorefrontKey,
   adminCodeIpRateLimiter,
   adminCodeEmailRateLimiter,
   adminCodeResendGapLimiter,
@@ -116,6 +121,7 @@ adminCodeAuthRouter.post(
 
 adminCodeAuthRouter.post(
   "/auth/code/verify",
+  requireStorefrontKey,
   async (req: Request, res: Response) => {
     const email = normalizeAdminEmail(
       (req.body as { email?: unknown } | undefined)?.email,
@@ -164,6 +170,7 @@ adminCodeAuthRouter.post(
 
 adminCodeAuthRouter.post(
   "/auth/logout",
+  requireStorefrontKey,
   async (req: Request, res: Response) => {
     const sessionToken = req.get("x-admin-session")?.trim();
 

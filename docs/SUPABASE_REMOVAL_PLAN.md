@@ -765,9 +765,18 @@ env files only.
 - Replace the Supabase OTP call in `adminAuth.ts` with code storage plus the
   existing email sender. Add the admin sign-in email template.
 - Stop reading/writing `admin_users.auth_user_id`.
-- Tests: valid code creates a session; expired, reused, or over-attempted code
-  fails; inactive admin fails; logout revokes; rate limits enforced; no
-  Supabase imports remain in auth code; audit log written.
+  - Tests: valid code creates a session; expired, reused, or over-attempted code
+    fails; inactive admin fails; logout revokes; rate limits enforced; no
+    Supabase imports remain in auth code; audit log written.
+
+Phase 3 note: the `x-storefront-key` requirement belongs on the three new
+routes (`POST /admin/auth/code/request`, `POST /admin/auth/code/verify`, and
+`POST /admin/auth/logout`) individually. It must not be router-wide on
+`/admin` or `/admin/auth`, because Express router middleware also runs for
+paths that do not match that router. A router-wide check previously caused the
+legacy public `POST /admin/auth/otp/request` to return 401. The regression test
+suite now covers the public OTP request, the protected new endpoints, and the
+dual-mode `GET /admin/me` and protected admin routes.
 
 ### Phase 4 - Admin auth web BFF, login, and logout
 
