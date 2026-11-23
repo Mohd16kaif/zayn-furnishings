@@ -103,7 +103,7 @@ staging and production projects use different values.
 | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | Web app mode; controls the STAGING banner and noindex | Set in Vercel | `staging` | `production` |
 | `NEXT_PUBLIC_API_URL` | API base URL used by the browser and server code | Render service URL | `<staging-api>` | `<production-api>` |
-| `NEXT_PUBLIC_SITE_URL` | Public web origin used for canonical links and the sitemap | Your domain | `<staging-web>` | `<production-web>` |
+| `NEXT_PUBLIC_SITE_URL` | Public web origin used for canonical links, the sitemap, and the admin same-origin check | Your domain | `<staging-web>` | `<production-web>` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase -> Project Settings -> API | Staging project URL | Production project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public key used by the browser | Supabase -> Project Settings -> API -> `anon` | Staging project key | Production project key |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe public key used by checkout | Stripe -> Developers -> API keys | `pk_test_...` | `pk_live_...` |
@@ -122,6 +122,11 @@ Notes:
 - Do not set a functions region. Leave the default region as-is (`iad1`).
 - Do not add rewrites for `/admin` or `/api`. The existing Next route handlers
   and admin pages must keep their paths.
+- `NEXT_PUBLIC_SITE_URL` must equal the public origin that users and admins
+  visit. Behind a tunnel or reverse proxy, use the public origin, not the
+  internal container URL. The admin BFF compares the `Origin` and
+  `Sec-Fetch-Site` headers with this origin and rejects same-site mutations
+  when it does not match.
 
 ## 3. Stripe setup
 

@@ -2,12 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const RESEND_SECONDS = 30;
+const RATE_LIMIT_MESSAGE =
+  "Too many attempts. Please wait a few minutes and try again.";
+const INVALID_CODE_MESSAGE =
+  "That code is invalid or expired. Check the code and try again.";
 
-export function LoginForm({ unauthorized }: { unauthorized: boolean }) {
+export function LoginForm({
+  unauthorized,
+  expired,
+}: {
+  unauthorized: boolean;
+  expired: boolean;
+}) {
   const router = useRouter();
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -35,16 +43,16 @@ export function LoginForm({ unauthorized }: { unauthorized: boolean }) {
     setStatus("");
 
     try {
-      const response = await fetch(`${apiUrl}/admin/auth/otp/request`, {
+      const response = await fetch("/api/admin-auth/code-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: address }),
+        cache: "no-store",
+        credentials: "same-origin",
       });
 
       if (response.status === 429) {
-        throw new Error(
-          "Too many attempts. Please wait a few minutes and try again.",
-        );
+        throw new Error(RATE_LIMIT_MESSAGE);
       }
 
       if (!response.ok) {
@@ -95,17 +103,24 @@ export function LoginForm({ unauthorized }: { unauthorized: boolean }) {
     setLoading(true);
 
     try {
-      const supabase = getSupabaseBrowserClient();
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        email,
-        token: code,
-        type: "email",
+      const response = await fetch("/api/admin-auth/code-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code }),
+        cache: "no-store",
+        credentials: "same-origin",
       });
 
-      if (verifyError) {
-        throw new Error(
-          "That code is invalid or expired. Check the code and try again.",
-        );
+      if (response.status === 401) {
+        throw new Error(INVALID_CODE_MESSAGE);
+      }
+
+      if (response.status === 429) {
+        throw new Error(RATE_LIMIT_MESSAGE);
+      }
+
+      if (!response.ok) {
+        throw new Error("We could not sign you in. Please try again.");
       }
 
       router.replace("/admin");
@@ -113,7 +128,7 @@ export function LoginForm({ unauthorized }: { unauthorized: boolean }) {
       setError(
         verifyFailure instanceof Error
           ? verifyFailure.message
-          : "That code is invalid or expired. Please try again.",
+          : "We could not sign you in. Please try again.",
       );
       setLoading(false);
     }
@@ -127,6 +142,15 @@ export function LoginForm({ unauthorized }: { unauthorized: boolean }) {
           className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
         >
           This email is not authorized.
+        </p>
+      ) : null}
+
+      {expired ? (
+        <p
+          role="alert"
+          className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          Your session has expired. Sign in again to continue.
         </p>
       ) : null}
 

@@ -25,7 +25,10 @@ export default async function AdminLoginPage({
         </div>
 
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <LoginForm unauthorized={params.reason === "unauthorized"} />
+          <LoginForm
+            unauthorized={params.reason === "unauthorized"}
+            expired={params.reason === "expired"}
+          />
         </div>
       </div>
     </main>

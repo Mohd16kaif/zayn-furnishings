@@ -1,23 +1,20 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { getCurrentAdmin } from "@/lib/adminServer";
 import {
   PUBLIC_CATEGORIES_TAG,
   PUBLIC_CONTENT_TAG,
   PUBLIC_SETTINGS_TAG,
 } from "@/lib/publicApi";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function revalidateStorefront(): Promise<{
   ok: boolean;
 }> {
   try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const admin = await getCurrentAdmin({ timeoutMs: 2_500 });
 
-    if (!user) {
+    if (!admin) {
       return { ok: false };
     }
 

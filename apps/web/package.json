@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "check:layout": "node scripts/check-layout.mjs",
+    "check:admin-login": "node scripts/check-admin-login.mjs",
     "check:checkout": "node scripts/check-checkout.mjs",
     "check:e2e": "node scripts/e2e-checkout.mjs"
   },

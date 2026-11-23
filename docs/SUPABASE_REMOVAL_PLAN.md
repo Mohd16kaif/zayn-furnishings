@@ -800,18 +800,58 @@ dual-mode `GET /admin/me` and protected admin routes.
 - The old Supabase login path is unchanged. The new layer is not referenced by
   the visible login page, admin pages, `proxy.ts`, or `adminApi.ts` yet.
 
-#### Phase 4b - Switch the visible admin UI (pending)
+#### Phase 4b - Switch the visible admin UI (done)
 
-- Change `apps/web/src/app/admin/login/login-form.tsx` to request and verify
-  codes through `/api/admin-auth/` instead of Supabase directly.
-- Change `admin-shell.tsx`, `apps/web/src/lib/adminApi.ts`, and admin uploads to
-  use `/api/admin-auth/me` and `/api/admin-proxy/`.
-- Change `apps/web/src/proxy.ts`, `adminPreview.ts`, and
-  `revalidateStorefront.ts` to read the `zf_admin_session` cookie.
-- Remove the browser Supabase admin flow after the new flow has been verified,
-  while keeping the old API route available until the cutover is complete.
-- Add Playwright coverage for the visible login, logout, 401 redirects, and
-  uploads through the proxy.
+- Changed `apps/web/src/app/admin/login/login-form.tsx` to request and verify
+  codes through `/api/admin-auth/code-request` and `/api/admin-auth/code-verify`.
+  The BFF sets the HttpOnly cookie, and the form no longer imports Supabase.
+- Changed `apps/web/src/lib/adminApi.ts` and all admin calls and XHR uploads to
+  use same-origin `/api/admin-proxy/` URLs. No bearer token or Authorization
+  header is created in the browser. A 401 redirects to
+  `/admin/login?reason=expired`; 413 and 403 return plain-language messages.
+- Made the protected admin layout a server component. It validates
+  `zf_admin_session` through a server-side `GET /admin/me` call and redirects
+  unauthenticated or invalid sessions to `/admin/login`. The shell receives the
+  admin identity as a prop and logs out through `/api/admin-auth/logout`.
+- Changed `apps/web/src/proxy.ts` to gate `/admin/*` on the presence of the
+  `zf_admin_session` cookie only. It makes no API call and leaves
+  `/admin/login` alone, so an invalid cookie cannot loop. The `/c/<slug>` and
+  `/p/<slug>` 404 guards and their 2.5-second API timeout are unchanged.
+- Changed `adminPreview.ts` and `revalidateStorefront.ts` to validate the admin
+  cookie through the API me endpoint. The server action fails closed unless the
+  caller is a valid admin.
+- Removed every Supabase import from the admin area and admin-related web libs.
+  The now-unused `apps/web/src/lib/supabase/client.ts` and `server.ts` adapters
+  remain until Phase 7, along with the packages and environment variables.
+- Added `apps/web/scripts/check-admin-login.mjs` and the
+  `pnpm --filter web check:admin-login` command. It covers the admin shell,
+  HttpOnly visibility, logout, missing/invalid cookie redirects, and zero
+  browser requests to Supabase hosts while browsing admin pages. Product image
+  GETs from Supabase Storage are reported separately.
+- `NEXT_PUBLIC_SITE_URL` must equal the public origin behind a tunnel or reverse
+  proxy because the admin BFF same-origin guard compares it with `Origin` and
+  `Sec-Fetch-Site`.
+
+##### Manual login test
+
+The Playwright check does not automate the email-code step because it needs a
+real inbox (or the development log-only email sender).
+
+1. Start the local database, API, and web app. Set the local `DATABASE_URL`
+   and `DATABASE_SSL` in the current shell only.
+2. Open `/admin/login`, enter the owner email, and request a code.
+3. Read the code from the API development log (when Resend is not configured)
+   or from the real inbox.
+4. Enter the six-digit code. Confirm the redirect to `/admin`, the admin email
+   and role in the header, and the owner-only controls for an owner.
+5. Open products, categories, content, delivery, settings, and an order detail
+   page. Confirm the pages load through `/api/admin-proxy/` and no browser
+   request goes to a Supabase host except product image GETs.
+6. Click Logout. Confirm `/admin/login` loads and the cookie is gone.
+7. Without a cookie, open `/admin/products`; confirm the redirect to
+   `/admin/login`.
+8. With a bogus `zf_admin_session` cookie, open `/admin/products`; confirm the
+   redirect to `/admin/login` without a redirect loop.
 
 ### Phase 5 - Local media adapter
 

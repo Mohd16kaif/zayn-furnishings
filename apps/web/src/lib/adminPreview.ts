@@ -1,21 +1,7 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentAdmin } from "@/lib/adminServer";
 
 export async function hasAdminPreviewSession(): Promise<boolean> {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  ) {
-    return false;
-  }
+  const admin = await getCurrentAdmin({ timeoutMs: 2_500 });
 
-  try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    return Boolean(session?.user);
-  } catch {
-    return false;
-  }
+  return admin !== null;
 }

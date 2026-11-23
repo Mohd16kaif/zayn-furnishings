@@ -1,7 +1,10 @@
 import type { OrderStatus } from "@zayn/shared";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const ADMIN_PROXY_BASE = "/api/admin-proxy";
+
+function adminProxyUrl(path: string): string {
+  return `${ADMIN_PROXY_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 export type AdminRole = "owner" | "staff";
 
@@ -264,16 +267,34 @@ type AdminFetchOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | null;
 };
 
-async function handleUnauthorized(): Promise<void> {
-  try {
-    await getSupabaseBrowserClient().auth.signOut();
-  } catch {
-    // Ignore sign-out failures; the redirect still needs to happen.
+let redirectingToLogin = false;
+
+function handleUnauthorized(): void {
+  if (typeof window === "undefined" || redirectingToLogin) {
+    return;
   }
 
-  if (typeof window !== "undefined") {
-    window.location.replace("/admin/login?reason=unauthorized");
+  redirectingToLogin = true;
+  window.location.replace("/admin/login?reason=expired");
+}
+
+function friendlyErrorMessage(
+  status: number,
+  apiMessage: string | undefined,
+): string {
+  if (status === 413) {
+    return apiMessage && apiMessage !== "Payload Too Large"
+      ? apiMessage
+      : "That upload is too large. The maximum upload size is 45 MB.";
   }
+
+  if (status === 403) {
+    return apiMessage && apiMessage !== "Forbidden"
+      ? apiMessage
+      : "This action was blocked. Refresh the page and try again.";
+  }
+
+  return apiMessage ?? "Something went wrong. Please try again.";
 }
 
 export async function adminFetch<T>(
@@ -281,18 +302,7 @@ export async function adminFetch<T>(
   options: AdminFetchOptions = {},
 ): Promise<T> {
   const { json, ...init } = options;
-  const supabase = getSupabaseBrowserClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    await handleUnauthorized();
-    throw new AdminApiError(401, "Your session has expired.");
-  }
-
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${session.access_token}`);
 
   let body = init.body;
 
@@ -301,15 +311,16 @@ export async function adminFetch<T>(
     body = JSON.stringify(json);
   }
 
-  const response = await fetch(`${apiUrl}${path}`, {
+  const response = await fetch(adminProxyUrl(path), {
     ...init,
     headers,
     body,
     cache: "no-store",
+    credentials: "same-origin",
   });
 
   if (response.status === 401) {
-    await handleUnauthorized();
+    handleUnauthorized();
     throw new AdminApiError(401, "Your session has expired.");
   }
 
@@ -320,7 +331,7 @@ export async function adminFetch<T>(
   if (!response.ok) {
     throw new AdminApiError(
       response.status,
-      data?.error ?? "Something went wrong. Please try again.",
+      friendlyErrorMessage(response.status, data?.error),
       data?.fields,
     );
   }
@@ -333,24 +344,11 @@ export async function adminUpload<T>(
   formData: FormData,
   onProgress?: (percent: number) => void,
 ): Promise<T> {
-  const supabase = getSupabaseBrowserClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    await handleUnauthorized();
-    throw new AdminApiError(401, "Your session has expired.");
-  }
-
   return new Promise<T>((resolve, reject) => {
     const request = new XMLHttpRequest();
 
-    request.open("POST", `${apiUrl}${path}`);
-    request.setRequestHeader(
-      "Authorization",
-      `Bearer ${session.access_token}`,
-    );
+    request.open("POST", adminProxyUrl(path));
+    request.withCredentials = true;
 
     request.upload.onprogress = (event) => {
       if (onProgress && event.lengthComputable) {
@@ -375,7 +373,7 @@ export async function adminUpload<T>(
       }
 
       if (request.status === 401) {
-        void handleUnauthorized();
+        handleUnauthorized();
         reject(new AdminApiError(401, "Your session has expired."));
         return;
       }
@@ -384,7 +382,7 @@ export async function adminUpload<T>(
         reject(
           new AdminApiError(
             request.status,
-            data?.error ?? "Something went wrong. Please try again.",
+            friendlyErrorMessage(request.status, data?.error),
             data?.fields,
           ),
         );
