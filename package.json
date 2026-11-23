@@ -16,7 +16,10 @@
     "stripe:listen": "node scripts/stripe-listen.mjs",
     "start": "pnpm --filter @zayn/api start",
     "db:generate": "pnpm --filter @zayn/api db:generate",
-    "db:migrate": "pnpm --filter @zayn/api db:migrate"
+    "db:migrate": "pnpm --filter @zayn/api db:migrate",
+    "db:dev:up": "node scripts/dev-db.mjs up",
+    "db:dev:down": "node scripts/dev-db.mjs down",
+    "db:dev:reset": "node scripts/dev-db.mjs reset"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -674,7 +674,7 @@ delete its named volume as well:
 docker compose -f docker-compose.dev.yml down -v
 ```
 
-### Phase 2 - Plain-Postgres database client and env cleanup
+### Phase 2 - Plain-Postgres database client and env cleanup (done, reduced scope)
 
 - Replace Supabase pooler comments with plain Postgres documentation.
 - Revisit `prepare: false` and `max: 1` in `db/client.ts` for a direct
@@ -683,6 +683,78 @@ docker compose -f docker-compose.dev.yml down -v
   using them yet.
 - Tests: API boots against local PostgreSQL; `/health` returns `db: true`;
   API and web lint/build still pass.
+
+#### Local plain-Postgres development
+
+This reduced Phase 2 makes the API run against the local Docker database for
+daily development. Supabase Auth and Storage are unchanged in this phase, so
+admin login and image uploads still use Supabase.
+
+The committed local connection URL is dev-only and is already in
+`docker-compose.dev.yml`; it is not a production secret:
+
+```text
+postgres://zayn_dev:zayn_dev_local@127.0.0.1:5433/zayn_dev
+```
+
+1. Start the database and wait for it to become healthy:
+
+```powershell
+pnpm db:dev:up
+```
+
+2. In `apps/api/.env` (gitignored), set the local database values:
+
+```text
+DATABASE_URL=postgres://zayn_dev:zayn_dev_local@127.0.0.1:5433/zayn_dev
+DATABASE_SSL=disable
+```
+
+`DATABASE_SSL` is optional. When it is unset, the driver keeps its previous
+behavior, including any `sslmode` in `DATABASE_URL`. Use `disable` for the local
+container, which does not serve TLS.
+
+3. Apply migrations:
+
+```powershell
+pnpm --filter @zayn/api db:migrate
+```
+
+4. Run the seeds:
+
+```powershell
+pnpm --filter @zayn/api db:seed-categories
+pnpm --filter @zayn/api db:seed
+```
+
+5. Create the owner admin row. `admin:create-owner` only needs
+   `OWNER_EMAIL` and `DATABASE_URL`; it does not call Supabase:
+
+```powershell
+$env:OWNER_EMAIL = "owner@example.com"
+pnpm --filter @zayn/api admin:create-owner
+Remove-Item Env:OWNER_EMAIL
+```
+
+6. Start development (web and API), or the API alone:
+
+```powershell
+pnpm dev
+# API only:
+pnpm --filter @zayn/api dev
+```
+
+Database helper scripts:
+
+- `pnpm db:dev:up` starts the container and waits for its healthcheck.
+- `pnpm db:dev:down` stops the container and keeps the data volume.
+- `pnpm db:dev:reset` removes the volume, starts the container, runs
+  migrations, and seeds categories.
+
+Do not commit `apps/api/.env`. If a developer created
+`apps/api/.env.supabase-backup`, that file must never be committed either, even
+with a forced add. Keep Supabase credentials in the developer's shell or local
+env files only.
 
 ### Phase 3 - Admin auth schema and API
 

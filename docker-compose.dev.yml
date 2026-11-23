@@ -1,8 +1,10 @@
 # Local development only. The credentials in this file are throwaway values.
 # They must never be used in production or exposed outside this machine.
 #
-# This database exists only for Phase 1 plain-Postgres migration testing.
+# This database is for local plain-Postgres development and migration testing.
 # Use host port 5433 so it cannot be confused with any other local Postgres.
+# The named volume below keeps data across pnpm db:dev:down/up. Only
+# pnpm db:dev:reset removes it.
 name: zayn-furnishings-postgres-dev
 
 services:

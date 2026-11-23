@@ -8,8 +8,28 @@ type Database = PostgresJsDatabase<Record<string, never>>;
 let db: Database | null = null;
 let connection: ReturnType<typeof postgres> | null = null;
 
+function connectionOptions(): {
+  max: number;
+  ssl?: "require" | "disable";
+} {
+  const options: { max: number; ssl?: "require" | "disable" } = {
+    max: 1,
+  };
+
+  // When DATABASE_SSL is unset, do not pass an SSL option at all. This keeps
+  // the driver's existing behavior, including any sslmode in DATABASE_URL,
+  // so the current Supabase connection keeps working.
+  if (env.DATABASE_SSL) {
+    options.ssl = env.DATABASE_SSL;
+  }
+
+  return options;
+}
+
 if (env.DATABASE_URL) {
-  connection = postgres(env.DATABASE_URL, { max: 1, prepare: false });
+  // No Supabase pooler-specific options belong here. Plain PostgreSQL and
+  // the Supabase session pooler both use the normal Postgres protocol.
+  connection = postgres(env.DATABASE_URL, connectionOptions());
   db = drizzle(connection);
 }
 

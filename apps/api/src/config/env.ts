@@ -17,7 +17,19 @@ const envSchema = z.object({
     .default("development"),
   APP_ENV: optionalString,
   PORT: z.coerce.number().int().positive().default(4000),
+  // Accepts any Postgres URL, including plain postgres:// URLs on localhost.
   DATABASE_URL: optionalString,
+  DATABASE_SSL: z.preprocess(
+    (value) => {
+      if (typeof value !== "string") {
+        return value;
+      }
+
+      const trimmed = value.trim();
+      return trimmed === "" ? undefined : trimmed;
+    },
+    z.enum(["require", "disable"]).optional(),
+  ),
   SUPABASE_URL: optionalString,
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
   SUPABASE_ANON_KEY: optionalString,
