@@ -2,9 +2,13 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { API_NAME } from "@zayn/shared";
-import { env } from "./config/env";
+import {
+  adminAuthSecretIsDevFallback,
+  env,
+} from "./config/env";
 import { initializeEmailSender } from "./emails/sender";
 import { adminAuthRouter } from "./routes/adminAuth";
+import { adminCodeAuthRouter } from "./routes/adminCodeAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
 import { adminContentRouter } from "./routes/adminContent";
 import { adminDashboardRouter } from "./routes/adminDashboard";
@@ -30,7 +34,11 @@ app.use(
     origin: env.WEB_ORIGIN,
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-admin-session",
+    ],
   }),
 );
 // Stripe signs the exact request bytes, so this must stay ahead of
@@ -49,6 +57,7 @@ app.use(healthRouter);
 app.use("/api/auth", authRouter);
 app.use("/api", ordersRouter);
 app.use("/api/public", publicRouter);
+app.use("/admin", adminCodeAuthRouter);
 app.use("/admin", adminAuthRouter);
 app.use("/admin", adminCategoriesRouter);
 app.use("/admin", adminContentRouter);
@@ -57,6 +66,12 @@ app.use("/admin", adminDeliveryZonesRouter);
 app.use("/admin", adminOrdersRouter);
 app.use("/admin", adminDashboardRouter);
 app.use("/admin", adminProductsRouter);
+
+if (adminAuthSecretIsDevFallback) {
+  console.warn(
+    "WARNING: ADMIN_AUTH_SECRET is not set. Using the built-in development-only fallback. Set ADMIN_AUTH_SECRET before staging or production.",
+  );
+}
 
 console.log(`App environment: ${env.APP_ENV}`);
 console.log(`Phone verifier: ${activePhoneVerifierName}`);

@@ -10,6 +10,7 @@ export * from "./schema/payments";
 export * from "./schema/deliveries";
 export * from "./schema/marketing";
 export * from "./schema/admin";
+export * from "./schema/adminAuth";
 export * from "./schema/inventory";
 export * from "./schema/notifications";
 export * from "./schema/audit";

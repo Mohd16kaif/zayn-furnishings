@@ -14,6 +14,13 @@ const mock = vi.hoisted(() => ({
   db: null as unknown,
 }));
 
+vi.mock("../src/emails/sender", () => ({
+  getEmailSender: () => ({
+    name: "log",
+    send: async () => ({ providerMessageId: "pm_test" }),
+  }),
+}));
+
 vi.mock("../src/middleware/requireAdmin", () => ({
   requireAdmin: (
     req: Record<string, unknown>,

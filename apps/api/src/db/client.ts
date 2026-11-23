@@ -3,7 +3,7 @@ import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "../config/env";
 
-type Database = PostgresJsDatabase<Record<string, never>>;
+export type Database = PostgresJsDatabase<Record<string, never>>;
 
 let db: Database | null = null;
 let connection: ReturnType<typeof postgres> | null = null;

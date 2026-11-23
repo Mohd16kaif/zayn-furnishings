@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { NextFunction, Request, Response } from "express";
 import { db } from "../db/client";
 import { adminUsers, auditLog } from "../db/schema";
+import { findAdminByAdminSession } from "../lib/adminAuthService";
 import { getSupabaseAdmin } from "../lib/supabase";
 
 export type AdminContext = {
@@ -37,6 +38,37 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  const sessionToken = req.get("x-admin-session")?.trim();
+
+  // The new admin session wins when both credentials are present. An invalid
+  // x-admin-session does not fall back to Supabase auth.
+  if (sessionToken) {
+    if (!db) {
+      res.status(500).json({ error: "Database is not configured" });
+      return;
+    }
+
+    try {
+      const lookup = await findAdminByAdminSession(db, sessionToken);
+
+      if (!lookup) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      req.admin = lookup.admin;
+      next();
+    } catch (error) {
+      console.error(
+        "Admin session verification failed:",
+        error instanceof Error ? error.message : error,
+      );
+      res.status(401).json({ error: "Unauthorized" });
+    }
+
+    return;
+  }
+
   const token = getBearerToken(req.headers.authorization);
 
   if (!token) {

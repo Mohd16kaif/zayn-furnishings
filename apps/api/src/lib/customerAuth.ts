@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt } from "drizzle-orm";
 import type { NextFunction, Request, Response } from "express";
 import { db } from "../db/client";
@@ -7,6 +6,12 @@ import {
   customers,
   type Customer,
 } from "../db/schema";
+import { hashSessionToken } from "./sessionTokens";
+
+export {
+  generateSessionToken,
+  hashSessionToken,
+} from "./sessionTokens";
 
 export const SESSION_COOKIE_NAME = "zf_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -20,14 +25,6 @@ declare global {
       customerSessionId?: string;
     }
   }
-}
-
-export function hashSessionToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-export function generateSessionToken(): string {
-  return randomBytes(32).toString("base64url");
 }
 
 export function maskPhone(phone: string): string {

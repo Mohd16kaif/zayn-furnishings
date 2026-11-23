@@ -71,6 +71,13 @@
       "when": 1794901811322,
       "tag": "0009_conscious_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795428768870,
+      "tag": "0010_admin_auth",
+      "breakpoints": true
     }
   ]
 }
