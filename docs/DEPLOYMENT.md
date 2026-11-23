@@ -51,6 +51,7 @@ stored in Git.
 | `SUPABASE_URL` | Supabase project URL | Supabase -> Project Settings -> API | Staging project URL | Production project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server key; full admin access | Supabase -> Project Settings -> API -> `service_role` | Staging project key | Production project key |
 | `SUPABASE_ANON_KEY` | Supabase public key; used to send admin sign-in codes | Supabase -> Project Settings -> API -> `anon` | Staging project key | Production project key |
+| `ADMIN_AUTH_SECRET` | Secret used to hash admin email login codes; at least 32 characters | Generate a random value (below) | Required in staging; use a different value from production | Required in production; use a different value from staging |
 | `OWNER_EMAIL` | Owner/admin email used by the app | Your own records | Test inbox you control | The real owner inbox |
 | `WEB_ORIGIN` | Exact web origin allowed by CORS; no trailing slash | The Vercel project URL or custom domain | `<staging-web>` | `<production-web>` |
 | `STOREFRONT_API_KEY` | Random shared secret between the web server and API | Generate a random value (below) | One random value; same value in Vercel staging | A different random value; same value in Vercel production |
@@ -70,6 +71,10 @@ Notes:
 - With `NODE_ENV=production`, the API requires `DATABASE_URL`,
   `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, and
   `STRIPE_WEBHOOK_SECRET` even on staging. Set real values.
+- `ADMIN_AUTH_SECRET` is required whenever `APP_ENV` is `staging` or
+  `production`. Use a random value of at least 32 characters, and never reuse
+  the staging value in production. Development falls back to a built-in
+  dev-only secret with a startup warning.
 - Staging phone sign-in falls back to the development stub while `APP_ENV` is
   `staging`: the code `123456` is accepted when Twilio is not configured. This
   is useful for testing, but it means staging must never be used by real

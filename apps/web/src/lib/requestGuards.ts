@@ -1,5 +1,58 @@
 import { isIP } from "node:net";
 
+function normalizeOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function expectedSiteOrigin(request: Request): string | null {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (configured) {
+    const origin = normalizeOrigin(configured);
+
+    if (origin) {
+      return origin;
+    }
+  }
+
+  return normalizeOrigin(request.url);
+}
+
+/**
+ * CSRF guard for state-changing admin BFF handlers.
+ *
+ * Browsers send Origin and/or Sec-Fetch-Site. Non-browser clients (curl,
+ * server-to-server) may send neither; those requests are allowed and rely on
+ * the HttpOnly SameSite=Lax cookie for browser protection.
+ */
+export function isSameOriginRequest(request: Request): boolean {
+  const expected = expectedSiteOrigin(request);
+
+  if (!expected) {
+    return false;
+  }
+
+  const origin = request.headers.get("origin");
+
+  if (origin) {
+    if (normalizeOrigin(origin) !== expected) {
+      return false;
+    }
+  }
+
+  const fetchSite = request.headers.get("sec-fetch-site")?.trim().toLowerCase();
+
+  if (fetchSite && fetchSite !== "same-origin") {
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Visitor IP used only for server-to-server forwarding to the API.
  * The API trusts this header only when the storefront key also matches.

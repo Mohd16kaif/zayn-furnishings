@@ -780,16 +780,38 @@ dual-mode `GET /admin/me` and protected admin routes.
 
 ### Phase 4 - Admin auth web BFF, login, and logout
 
-- Add Next route handlers for request, verify, logout, and the admin proxy.
-- Set the HttpOnly `zf_admin_session` cookie on verify; clear it on logout and
-  401.
-- Change `adminApi.ts`, `admin-shell.tsx`, `login-form.tsx`, `proxy.ts`,
-  `adminPreview.ts`, and `revalidateStorefront.ts` to the cookie/BFF flow.
-- Remove the browser Supabase client from the admin flow.
-- Tests: Playwright login with a dev-readable code; cookie is HttpOnly and
-  Secure in production mode; direct `/admin` redirects when the cookie is
-  missing; logout clears the cookie; 401 redirects; server action fails closed;
-  CSRF origin rejection.
+#### Phase 4a - Server-side admin session layer (done)
+
+- Added the HttpOnly `zf_admin_session` cookie helpers with a 7-day lifetime,
+  `SameSite=Lax`, production-only `Secure`, and server-only token handling.
+- Added the new auth routes under `/api/admin-auth/`:
+  - `POST /api/admin-auth/code-request`
+  - `POST /api/admin-auth/code-verify`
+  - `POST /api/admin-auth/logout`
+  - `GET /api/admin-auth/me`
+- Added the same-origin guard in `requestGuards.ts`; every mutating admin BFF
+  handler rejects a foreign `Origin` or `Sec-Fetch-Site`.
+- Added the admin data proxy at `/api/admin-proxy/[...path]`. It only forwards
+  `admin/*` paths, blocks `admin/auth/*`, strips browser credentials and
+  hop-by-hop headers, adds the server-held session and storefront key, and
+  streams multipart bodies with a 45 MB cap.
+- Added the dev-only `admin:mint-dev-session` script. It refuses unless
+  `APP_ENV=development` and the database host is localhost/127.0.0.1.
+- The old Supabase login path is unchanged. The new layer is not referenced by
+  the visible login page, admin pages, `proxy.ts`, or `adminApi.ts` yet.
+
+#### Phase 4b - Switch the visible admin UI (pending)
+
+- Change `apps/web/src/app/admin/login/login-form.tsx` to request and verify
+  codes through `/api/admin-auth/` instead of Supabase directly.
+- Change `admin-shell.tsx`, `apps/web/src/lib/adminApi.ts`, and admin uploads to
+  use `/api/admin-auth/me` and `/api/admin-proxy/`.
+- Change `apps/web/src/proxy.ts`, `adminPreview.ts`, and
+  `revalidateStorefront.ts` to read the `zf_admin_session` cookie.
+- Remove the browser Supabase admin flow after the new flow has been verified,
+  while keeping the old API route available until the cutover is complete.
+- Add Playwright coverage for the visible login, logout, 401 redirects, and
+  uploads through the proxy.
 
 ### Phase 5 - Local media adapter
 

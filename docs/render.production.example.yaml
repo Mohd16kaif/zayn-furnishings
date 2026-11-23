@@ -30,6 +30,8 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+      - key: ADMIN_AUTH_SECRET
+        sync: false
       - key: OWNER_EMAIL
         sync: false
       - key: WEB_ORIGIN
