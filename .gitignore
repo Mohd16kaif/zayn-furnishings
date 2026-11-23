@@ -16,6 +16,9 @@ build/
 # Image originals backup
 _originals/
 
+# Local media storage driver data
+apps/api/media-data/
+
 # Email preview output
 apps/api/tmp-email-preview/
 

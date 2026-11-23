@@ -18,6 +18,7 @@
     "admin:create-owner": "tsx src/scripts/createOwner.ts",
     "admin:purge-auth": "tsx src/scripts/purgeAdminAuth.ts",
     "admin:mint-dev-session": "tsx src/scripts/mintDevSession.ts",
+    "media:orphans": "tsx src/scripts/mediaOrphans.ts",
     "orders:cancel-stale": "tsx src/scripts/cancelStalePendingOrders.ts",
     "orders:reconcile": "tsx src/scripts/reconcilePendingOrders.ts",
     "audit:test-data": "tsx src/scripts/auditTestData.ts",

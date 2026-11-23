@@ -853,18 +853,52 @@ real inbox (or the development log-only email sender).
 8. With a bogus `zf_admin_session` cookie, open `/admin/products`; confirm the
    redirect to `/admin/login` without a redirect loop.
 
-### Phase 5 - Local media adapter
+### Phase 5 - Local media adapter (done)
 
-- Replace Supabase Storage calls in `imagePipeline.ts` with filesystem
-  writes/deletes under `MEDIA_ROOT`.
-- Add safe path resolution, allowed folders, atomic writes, and the media
-  serving route with caching and content-type headers.
-- Keep `detectImageType`, `processImage`, multer limits, and rate limiting.
-- Keep the existing upload/delete call sites and database columns.
-- Tests: JPEG/PNG/WebP upload produces a WebP file and a `/media/...` URL;
-  text files, oversize files, wrong counts, traversal paths, and symlinks are
-  rejected; delete removes the file; missing files are tolerated; paths stay
-  under `MEDIA_ROOT`.
+- Added `apps/api/src/lib/mediaStorage.ts` with the `MediaStorage` interface
+  (`put`, `remove`, `publicUrl`) and two drivers:
+  - `SupabaseMediaStorage` keeps the existing `product-images` bucket,
+    upload options, delete calls, and public URL behavior.
+  - `LocalMediaStorage` writes under `MEDIA_DIR` using the same
+    `products|content|categories/<uuid>/<uuid>.webp` paths.
+- `MEDIA_DRIVER` selects the driver and defaults to `supabase`, so the current
+  deployment behavior is unchanged. `local` is explicit.
+- Local writes are atomic (temporary file then rename), create directories as
+  needed, use restrictive permissions, and reject absolute paths, `..`,
+  backslashes, NUL bytes, percent-encoded input, wrong folders, non-UUID names,
+  and non-WebP extensions. Reads and deletes resolve real paths and reject
+  symlink escapes outside `MEDIA_DIR`.
+- Added the public `GET`/`HEAD /media/*` route, mounted only when
+  `MEDIA_DRIVER=local`. It uses the same allow-list, returns 404 for missing or
+  invalid paths, never lists directories, and sends fixed
+  `Content-Type: image/webp`, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: public, max-age=31536000, immutable`, and
+  `Cross-Origin-Resource-Policy: cross-origin`. The route is mounted after
+  Helmet and CORS so the media headers override Helmet's default CORP. A
+  lenient 600 request/minute/IP limiter applies.
+- Added a local disk guard. `MEDIA_MIN_FREE_MB` defaults to 500; uploads are
+  refused with a 507-style error below that free space. If free space cannot
+  be determined, the API logs a warning and allows uploads.
+- Added `pnpm --filter @zayn/api media:orphans [--dry-run|--delete]`. The
+  default is report-only. It lists unreferenced valid media files and database
+  rows whose file is missing.
+- `verifyImages.ts` continues to work unchanged because it only exercises the
+  in-memory magic-byte and sharp pipeline; it does not touch Storage.
+- Environment variables:
+  - `MEDIA_DRIVER` (`supabase` default, or `local`)
+  - `MEDIA_DIR` (absolute; required for local outside development; development
+    default `<repo>/apps/api/media-data`, which is gitignored)
+  - `MEDIA_PUBLIC_BASE_URL` (default `http://localhost:4000` in development;
+    required for local in staging/production)
+  - `MEDIA_MIN_FREE_MB` (default 500)
+- Tests cover path validation and traversal, atomic writes and deletes, local
+  disk guard, env validation, media route headers and 404/HEAD/405 behavior,
+  mount-only-when-local, and the unchanged Supabase driver.
+- Phase 6 still owns the web side: `apps/web/next.config.ts` image host
+  settings and any `/media` rewrite are unchanged here. Local media URLs will
+  not render through the web image pipeline until Phase 6.
+- Existing Supabase-hosted development images are disposable. A one-time copy
+  script for them is NOT part of this phase.
 
 ### Phase 6 - Web image URLs and Next config
 

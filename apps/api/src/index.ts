@@ -20,6 +20,7 @@ import { activePhoneVerifierName } from "./lib/phoneVerifier";
 import { testStripeKeyInProductionWarning } from "./lib/stripeKeyGuard";
 import { authRouter } from "./routes/auth";
 import { healthRouter } from "./routes/health";
+import { registerMediaRoute } from "./routes/media";
 import { ordersRouter } from "./routes/orders";
 import { publicRouter } from "./routes/public";
 import { stripeWebhookRouter } from "./routes/webhooks";
@@ -27,6 +28,9 @@ import { stripeWebhookRouter } from "./routes/webhooks";
 initializeEmailSender();
 
 const app = express();
+
+// Required behind Render's proxy so rate limiting sees the real client IP.
+app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(
@@ -41,13 +45,15 @@ app.use(
     ],
   }),
 );
+registerMediaRoute(app, {
+  driver: env.MEDIA_DRIVER,
+  mediaDir: env.MEDIA_DIR,
+});
+
 // Stripe signs the exact request bytes, so this must stay ahead of
 // express.json() or the signature check will always fail.
 app.use("/webhooks", stripeWebhookRouter);
 app.use(express.json({ limit: "1mb" }));
-
-// Required behind Render's proxy so rate limiting sees the real client IP.
-app.set("trust proxy", 1);
 
 app.get("/", (_req, res) => {
   res.json({ name: API_NAME, status: "ok" });
@@ -74,6 +80,11 @@ if (adminAuthSecretIsDevFallback) {
 }
 
 console.log(`App environment: ${env.APP_ENV}`);
+console.log(
+  `Media driver: ${env.MEDIA_DRIVER}${
+    env.MEDIA_DRIVER === "local" ? ` (${env.MEDIA_DIR})` : ""
+  }`,
+);
 console.log(`Phone verifier: ${activePhoneVerifierName}`);
 
 const stripeKeyWarning = testStripeKeyInProductionWarning(

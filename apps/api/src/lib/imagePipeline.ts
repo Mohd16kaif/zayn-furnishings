@@ -4,9 +4,12 @@ import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 import sharp from "sharp";
 import { HttpError } from "./adminCatalog";
-import { getSupabaseAdmin } from "./supabase";
+import {
+  getMediaStorage,
+  MediaStorageCapacityError,
+  MediaStorageError,
+} from "./mediaStorage";
 
-export const PRODUCT_IMAGES_BUCKET = "product-images";
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 export type DetectedImageType = "jpeg" | "png" | "webp";
@@ -79,10 +82,6 @@ export async function processImage(
     .toBuffer();
 }
 
-function imageStorage() {
-  return getSupabaseAdmin().storage.from(PRODUCT_IMAGES_BUCKET);
-}
-
 export async function uploadImageObject(input: {
   folder: string;
   ownerId: string;
@@ -90,21 +89,23 @@ export async function uploadImageObject(input: {
   errorMessage: string;
 }): Promise<{ path: string; url: string }> {
   const path = `${input.folder}/${input.ownerId}/${randomUUID()}.webp`;
-  const storage = imageStorage();
+  const storage = getMediaStorage();
 
-  const { error } = await storage.upload(path, input.buffer, {
-    contentType: "image/webp",
-    cacheControl: "31536000",
-    upsert: false,
-  });
+  try {
+    await storage.put(path, input.buffer, "image/webp");
+  } catch (error) {
+    if (error instanceof MediaStorageCapacityError) {
+      throw new HttpError(507, error.message);
+    }
 
-  if (error) {
-    throw new HttpError(500, input.errorMessage);
+    if (error instanceof MediaStorageError) {
+      throw new HttpError(500, input.errorMessage);
+    }
+
+    throw error;
   }
 
-  const { data } = storage.getPublicUrl(path);
-
-  return { path, url: data.publicUrl };
+  return { path, url: storage.publicUrl(path) };
 }
 
 export async function deleteImageObjects(
@@ -116,10 +117,7 @@ export async function deleteImageObjects(
   }
 
   try {
-    const { error } = await imageStorage().remove(paths);
-    if (error) {
-      console.error(`Failed to delete ${logLabel}:`, error.message);
-    }
+    await getMediaStorage().remove(paths);
   } catch (error) {
     console.error(
       `Failed to delete ${logLabel}:`,
