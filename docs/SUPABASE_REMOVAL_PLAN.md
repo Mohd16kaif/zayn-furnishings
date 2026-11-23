@@ -621,16 +621,58 @@ Do not install anything as part of this audit.
 Each phase is intended to be one small prompt and independently testable. The
 order keeps the app working at every step.
 
-### Phase 1 - Plain-Postgres migration bootstrap
+### Phase 1 - Plain-Postgres migration bootstrap (done)
 
 - Add an idempotent role bootstrap for `anon` and `authenticated` (NOLOGIN,
-  no privileges) and run it before `drizzle-kit migrate`.
+  no privileges) and run it before the migration runner.
 - Add a CI/local test that starts `postgres:16`, runs migrations from empty,
   runs them again to confirm no duplicate failure, and runs
   `db:seed-categories`.
 - Do not change application runtime code yet.
 - Tests: fresh migration succeeds; all 10 migrations applied; key tables
   exist; seed is idempotent; `pnpm check:encoding`.
+
+#### Local plain-Postgres testing
+
+The local test database is defined in `docker-compose.dev.yml` at the repo
+root. It listens on `127.0.0.1:5433` (not 5432) and uses throwaway credentials
+that are marked local-development-only in the compose file.
+
+```powershell
+docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml ps
+
+$env:TEST_DATABASE_URL = "postgres://zayn_dev:zayn_dev_local@127.0.0.1:5433/zayn_dev"
+pnpm --filter @zayn/api db:fresh-check
+pnpm test
+
+Remove-Item Env:TEST_DATABASE_URL
+docker compose -f docker-compose.dev.yml down
+```
+
+The fresh check creates a randomly named throwaway database, runs the role
+bootstrap and every migration twice, asserts the Drizzle schema tables, the RLS
+state specified by the migrations, and the migration history, then drops the
+throwaway database. It refuses to run when `TEST_DATABASE_URL` is missing or
+when its host contains `supabase`. The integration test is skipped when
+`TEST_DATABASE_URL` is not set, so `pnpm test` still passes without Docker.
+
+To apply migrations and the category seed to the same local database (the seed
+is safe to re-run):
+
+```powershell
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+pnpm --filter @zayn/api db:migrate
+pnpm --filter @zayn/api db:seed-categories
+Remove-Item Env:DATABASE_URL
+```
+
+`apps/api/.env` is not used by the fresh check. To stop the test database and
+delete its named volume as well:
+
+```powershell
+docker compose -f docker-compose.dev.yml down -v
+```
 
 ### Phase 2 - Plain-Postgres database client and env cleanup
 

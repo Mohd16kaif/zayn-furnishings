@@ -1,0 +1,28 @@
+# Local development only. The credentials in this file are throwaway values.
+# They must never be used in production or exposed outside this machine.
+#
+# This database exists only for Phase 1 plain-Postgres migration testing.
+# Use host port 5433 so it cannot be confused with any other local Postgres.
+name: zayn-furnishings-postgres-dev
+
+services:
+  postgres:
+    image: postgres:16
+    restart: "no"
+    environment:
+      POSTGRES_USER: zayn_dev
+      POSTGRES_PASSWORD: zayn_dev_local
+      POSTGRES_DB: zayn_dev
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - zayn_postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zayn_dev -d zayn_dev"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  zayn_postgres_dev_data:
