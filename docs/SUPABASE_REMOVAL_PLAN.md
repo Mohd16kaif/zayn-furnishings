@@ -952,22 +952,51 @@ real inbox (or the development log-only email sender).
   bootstrap role comments, the removal plan, and clearly labelled legacy notes;
   no Supabase runtime configuration is required to boot.
 
-### Phase 8 - Docker images for API and web
+### Phase 8 - Docker images for API and web (done)
 
-- Add multi-stage Dockerfiles for `apps/api` and `apps/web`.
-- Use a supported Node 24 base, pnpm through Corepack, a frozen install, a
-  non-root runtime user, and a read-only root filesystem where practical.
-- Enable Next standalone output for the web image.
-- Add `.dockerignore` files and copy only the workspace packages needed by each
-  image.
-- Tests: both images build; the API image starts against PostgreSQL and serves
-  `/health`; the web image serves `/` and can reach the API; container runs as
-  non-root; media directory permission checks.
+- Added root `.dockerignore` and multi-stage `apps/api/Dockerfile` and
+  `apps/web/Dockerfile`. Both build from the repository root, use
+  `node:24-bookworm-slim`, pnpm `12.4.2` through Corepack, a frozen install,
+  and run as non-root uid 1001.
+- The API image uses `pnpm deploy --prod` for a production-only dependency
+  tree and copies only the compiled `dist`, Drizzle migrations,
+  db-bootstrap, package manifest, and production `node_modules`. It uses
+  `tini` as PID 1, exposes 4000, has a Node healthcheck, and writes media to
+  `/data/media`.
+- The web image enables `output: "standalone"` only when
+  `NEXT_OUTPUT=standalone` is set (the Docker build sets it), with
+  `outputFileTracingRoot` at the repo root. It copies `.next/standalone`,
+  `.next/static`, public files, and the built `@zayn/shared` package, then
+  runs `node apps/web/server.js`.
+- Added `pnpm docker:build:api`, `pnpm docker:build:web`, and
+  `pnpm docker:smoke` (`scripts/docker-smoke.mjs`). The smoke test uses a
+  throwaway PostgreSQL container, network, and media volume, then removes all
+  of its own resources.
+- Added `docs/DOCKER.md` with build commands, build args, runtime variables,
+  logs, image removal, and the smoke test.
+- Tests: both images build; the API migrations run twice successfully and are
+  idempotent; the API serves `/health` with `db:true`, public categories, and
+  404 for bad media; the API is non-root, writes to `/data/media`, and resizes
+  with `sharp`; the web standalone server serves `/`, `/admin/login`, and
+  `/robots.txt`; no secret-looking env vars or `.env` files are present in
+  either image.
 
 ### Phase 9 - Compose stack
 
 - Add compose services: `db`, one-shot `migrate`, `api`, `web`, and the tunnel
   or proxy edge.
+- Add a server-only internal API URL for web server code. Today the server and
+  browser share `NEXT_PUBLIC_API_URL` in
+  `apps/web/src/lib/publicApi.ts` (`apiUrl()`),
+  `apps/web/src/lib/storeStatus.ts`, `apps/web/src/proxy.ts`,
+  `apps/web/src/lib/adminAuthApi.ts`, `apps/web/src/lib/authApi.ts`, and the
+  route handlers that import those helpers
+  (`app/api/admin-proxy/[...path]`, `app/api/cart-validate`,
+  `app/api/discount/preview`, `app/api/search-suggest`,
+  `app/api/zip-check`, and the order/auth route handlers). Compose should add
+  an internal URL (for example `API_INTERNAL_URL=http://api:4000`) while
+  keeping the public `NEXT_PUBLIC_API_URL` for browser-facing values.
+  `STOREFRONT_API_KEY` also stays server-only in those calls.
 - Add named volumes for Postgres and media, healthchecks, restart policies,
   log rotation, and an internal network.
 - Publish only the edge ports in production; publish API/web ports on localhost

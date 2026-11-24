@@ -1,0 +1,53 @@
+# Git and local metadata
+.git
+.gitignore
+.editorconfig
+
+# Dependencies and build output
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+build
+**/build
+coverage
+**/coverage
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Environment files: never allow any of these into an image, including examples
+.env
+**/.env
+.env.*
+**/.env.*
+
+# Local media and generated artifacts
+apps/api/media-data
+apps/api/tmp-email-preview
+docs/screenshots
+apps/web/docs/screenshots
+_originals
+
+# Logs
+*.log
+**/*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Docker and deployment files themselves
+Dockerfile
+**/Dockerfile
+Dockerfile.*
+**/Dockerfile.*
+.dockerignore
+docker-compose*.yml
+**/docker-compose*.yml
+render.yaml
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea
+.vscode
