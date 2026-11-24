@@ -140,6 +140,117 @@ web containers, checks HTTP responses, non-root operation, writable media,
 network, and volume it created, including on failure. It never touches the
 developer's `zayn-furnishings-postgres-dev` container or volume.
 
+## Compose stack (Phase 9)
+
+`docker-compose.stack.yml` runs the complete local stack with one published
+edge port:
+
+| Service | Role |
+| --- | --- |
+| `postgres` | PostgreSQL 16 data store on the named `pgdata` volume. No published port. |
+| `migrate` | One-shot API image command: `node dist/scripts/migrate.js`. Runs after PostgreSQL is healthy and must complete before the API starts. |
+| `api` | API image. Reaches PostgreSQL by service name, writes `/data/media` on the `media` volume, and is not published to the host. |
+| `web` | Next standalone image. Server code uses `API_INTERNAL_URL=http://api:4000`; browser-facing values stay on `NEXT_PUBLIC_*`. Not published to the host. |
+| `edge` | Caddy 2. The only published port: `127.0.0.1:${EDGE_HOST_PORT:-8080}:80`. Routes `/media/*` and `/webhooks/stripe` to the API and everything else to the web app. |
+
+All services share one user-defined Compose network, so `api`, `web`,
+`postgres`, and `edge` resolve by service name. `STOREFRONT_API_KEY` must be the
+same value for `api` and `web`; the example env file has one variable that feeds
+both. API and web use `read_only` root filesystems with small tmpfs mounts for
+`/tmp` (and the web `.next/cache`); media writes go to the `media` volume.
+
+### Initialize and run
+
+```powershell
+pnpm docker:stack:init
+# Set OWNER_EMAIL and any Stripe/Resend/Twilio values in .env.compose.
+pnpm docker:stack:up
+```
+
+`.env.compose` is ignored by Git and Docker. `docker:stack:init` generates
+random alphanumeric `POSTGRES_PASSWORD`, `ADMIN_AUTH_SECRET`, and
+`STOREFRONT_API_KEY` values and never prints them. The password is alphanumeric
+so it can be embedded directly in `DATABASE_URL` without URL escaping.
+
+Create the owner admin (the compiled entry exists in the API image):
+
+```powershell
+docker compose -f docker-compose.stack.yml --env-file .env.compose run --rm api node dist/scripts/createOwner.js
+```
+
+If your shell needs the project name explicitly, use `-p zayn`. Then open
+`http://localhost:8080/admin/login`, request a code, and read the development
+code from the API logs:
+
+```powershell
+pnpm docker:stack:logs
+```
+
+The code is logged only when `APP_ENV=development` and Resend is not configured.
+This local edge is plain HTTP; Phase 10 adds TLS and the HTTPS-only cookie and
+HSTS behavior.
+
+### Build-time vs runtime for the web image
+
+| Variable | Compose source | When |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | `.env.compose` | Build-time, public edge origin |
+| `NEXT_PUBLIC_MEDIA_BASE_URL` | `.env.compose` | Build-time, public edge origin |
+| `NEXT_PUBLIC_SITE_URL` | `.env.compose` | Build-time, public edge origin |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `.env.compose` | Build-time |
+| `NEXT_PUBLIC_APP_ENV` | `.env.compose` | Build-time |
+| `API_INTERNAL_URL` | Compose (`http://api:4000`) | Runtime, server-only |
+| `STOREFRONT_API_KEY` | `.env.compose` | Runtime, server-only, shared with the API |
+| `APPLE_PAY_DOMAIN_ASSOCIATION` | `.env.compose` | Runtime, server-only |
+| `NODE_ENV` | `.env.compose` | Runtime |
+
+### Stop, reset, logs
+
+```powershell
+pnpm docker:stack:down       # stop containers, keep zayn_pgdata and zayn_media
+pnpm docker:stack:logs       # follow logs
+pnpm docker:stack:reset -- --yes  # remove containers and volumes
+```
+
+`docker:stack:reset` refuses to remove volumes without `--yes`. The project name
+is `zayn`, so the named volumes are `zayn_pgdata` and `zayn_media`.
+
+### What is exposed
+
+- Host: only `127.0.0.1:<EDGE_HOST_PORT>`, default `8080`.
+- Not exposed: PostgreSQL `5432`, API `4000`, web `3000`.
+- Through the edge: `/media/*` and `/webhooks/stripe` go to the API. The API's
+  public, admin, health, and order routes are not directly published; for
+  example `/api/public/categories` at the edge returns the web 404 page.
+- The edge passes the original `Host` and adds `X-Forwarded-For`,
+  `X-Forwarded-Proto`, and `X-Forwarded-Host`.
+
+### Smoke test
+
+```powershell
+pnpm docker:stack:smoke
+```
+
+The smoke test uses the `zayn-smoke` Compose project, a temp env file in the OS
+temp folder, and port `18080`. It builds the stack images, tests the edge,
+migrations, owner creation, real code login, admin product and image upload,
+media serving, foreign-origin rejection, deletion cleanup, API restart
+persistence, and non-root operation. It removes all of its containers,
+networks, volumes, and the temp env file even on failure, and never touches the
+developer's `zayn-furnishings-postgres-dev` container or the real `.env.compose`.
+
+### Phase 10 limitations
+
+- No TLS: the edge listens on plain HTTP at `:80`. Phase 10 must add
+  Cloudflare Tunnel/HTTPS, HSTS, and secure-cookie behavior.
+- Visitor IP: Caddy's `X-Forwarded-For` is the direct peer. Behind Cloudflare,
+  Caddy must use trusted proxies or Cloudflare's real-IP header before the app
+  can see the real client IP.
+- Stripe webhook URL: Phase 10 must set the public HTTPS webhook endpoint and
+  matching signing secret.
+- Same-origin checks: `NEXT_PUBLIC_SITE_URL` must equal the final public web
+  origin used by the admin BFF, and Caddy must preserve the original Host.
+
 ## Logs
 
 ```powershell

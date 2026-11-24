@@ -1,0 +1,61 @@
+# Local HTTP edge for the Phase 9 Compose stack.
+#
+# Phase 10 will add the Cloudflare Tunnel and TLS. Until then this listener is
+# plain HTTP on :80 and only reaches the host at 127.0.0.1 (see compose ports).
+# HSTS is intentionally omitted because this phase has no TLS. A strict CSP is
+# also intentionally omitted because Next.js needs its inline runtime scripts;
+# a compatible policy belongs with the Phase 10 edge work.
+#
+# Visitor IP note: reverse_proxy sets X-Forwarded-For to the address of the
+# direct peer. Behind Cloudflare in Phase 10, Caddy must use trusted_proxies
+# (or Cloudflare's real-IP header) before the app can see the real visitor IP.
+
+:80 {
+	request_body {
+		max_size 50MB
+	}
+
+	encode zstd gzip
+
+	header {
+		?X-Content-Type-Options nosniff
+		?Referrer-Policy strict-origin-when-cross-origin
+		?X-Frame-Options SAMEORIGIN
+	}
+
+	# Access logs go to stdout. Cookies are removed, and common code/token query
+	# keys are removed so login codes, session tokens, and other sensitive query
+	# values never appear in logs. Admin codes travel in POST bodies.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				request>uri query {
+					delete code
+					delete token
+					delete session
+					delete session_token
+					delete otp
+					delete access_token
+					delete refresh_token
+				}
+			}
+		}
+	}
+
+	# Caddy passes the original Host and adds X-Forwarded-For,
+	# X-Forwarded-Proto, and X-Forwarded-Host by default.
+	handle /media/* {
+		reverse_proxy api:4000
+	}
+
+	handle /webhooks/stripe {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

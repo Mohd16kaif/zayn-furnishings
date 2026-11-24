@@ -4,6 +4,8 @@ node_modules/
 # Environment
 .env*
 !.env.example
+.env.compose
+!.env.compose.example
 
 # Next.js
 .next/

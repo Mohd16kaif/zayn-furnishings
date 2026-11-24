@@ -6,7 +6,8 @@ import {
   validateAdminProxyPath,
 } from "@/lib/adminProxy";
 import { getAdminSessionToken } from "@/lib/adminSession";
-import { apiUrl, requestHeaders } from "@/lib/publicApi";
+import { apiBaseUrl } from "@/lib/apiBaseUrl";
+import { requestHeaders } from "@/lib/publicApi";
 import {
   getVisitorIp,
   isSameOriginRequest,
@@ -97,7 +98,7 @@ async function handle(
 
   try {
     const response = await fetch(
-      `${apiUrl().replace(/\/+$/, "")}/${validation.segments.join("/")}${requestUrl.search}`,
+      `${apiBaseUrl().replace(/\/+$/, "")}/${validation.segments.join("/")}${requestUrl.search}`,
       init,
     );
     const responseHeaders = new Headers({

@@ -22,6 +22,7 @@ coverage
 **/.env
 .env.*
 **/.env.*
+.env.compose
 
 # Local media and generated artifacts
 apps/api/media-data

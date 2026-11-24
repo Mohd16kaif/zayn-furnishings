@@ -10,10 +10,44 @@ import {
   declaredBodyTooLarge,
   validateAdminProxyPath,
 } from "../apps/web/src/lib/adminProxy.ts";
+import { apiBaseUrl } from "../apps/web/src/lib/apiBaseUrl.ts";
 import { isSameOriginRequest } from "../apps/web/src/lib/requestGuards.ts";
 
 const SITE = "http://localhost:3000";
 process.env.NEXT_PUBLIC_SITE_URL = SITE;
+
+const originalPublicApiUrl = process.env.NEXT_PUBLIC_API_URL;
+const originalInternalApiUrl = process.env.API_INTERNAL_URL;
+
+try {
+  delete process.env.NEXT_PUBLIC_API_URL;
+  delete process.env.API_INTERNAL_URL;
+  assert.equal(apiBaseUrl(), "http://localhost:4000");
+
+  process.env.NEXT_PUBLIC_API_URL = "http://public-api.example.test";
+  assert.equal(apiBaseUrl(), "http://public-api.example.test");
+
+  process.env.API_INTERNAL_URL = "  http://api:4000  ";
+  assert.equal(apiBaseUrl(), "http://api:4000");
+
+  process.env.API_INTERNAL_URL = "";
+  assert.equal(apiBaseUrl(), "http://public-api.example.test");
+
+  process.env.API_INTERNAL_URL = "http://api-after-start:4000";
+  assert.equal(apiBaseUrl(), "http://api-after-start:4000");
+} finally {
+  if (originalPublicApiUrl === undefined) {
+    delete process.env.NEXT_PUBLIC_API_URL;
+  } else {
+    process.env.NEXT_PUBLIC_API_URL = originalPublicApiUrl;
+  }
+
+  if (originalInternalApiUrl === undefined) {
+    delete process.env.API_INTERNAL_URL;
+  } else {
+    process.env.API_INTERNAL_URL = originalInternalApiUrl;
+  }
+}
 
 function request(path, options = {}) {
   return new Request(`${SITE}${path}`, options);
@@ -240,4 +274,4 @@ assert.equal(
   false,
 );
 
-console.log("PASS: admin BFF unit checks (cookie flags, origin guard, path validation, header stripping).");
+console.log("PASS: admin BFF unit checks (cookie flags, origin guard, path validation, header stripping, internal API URL).");

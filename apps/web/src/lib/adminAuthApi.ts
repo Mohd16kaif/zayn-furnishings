@@ -1,4 +1,5 @@
-import { apiUrl, requestHeaders } from "./publicApi";
+import { apiBaseUrl } from "./apiBaseUrl";
+import { requestHeaders } from "./publicApi";
 
 const API_TIMEOUT_MS = 10_000;
 
@@ -24,7 +25,7 @@ export async function callAdminAuthApi(
     headers["Content-Type"] = "application/json";
   }
 
-  return fetch(`${apiUrl()}${path}`, {
+  return fetch(`${apiBaseUrl()}${path}`, {
     method: options.method ?? "GET",
     headers,
     body:

@@ -981,37 +981,56 @@ real inbox (or the development log-only email sender).
   `/robots.txt`; no secret-looking env vars or `.env` files are present in
   either image.
 
-### Phase 9 - Compose stack
+### Phase 9 - Compose stack (done)
 
-- Add compose services: `db`, one-shot `migrate`, `api`, `web`, and the tunnel
-  or proxy edge.
-- Add a server-only internal API URL for web server code. Today the server and
-  browser share `NEXT_PUBLIC_API_URL` in
-  `apps/web/src/lib/publicApi.ts` (`apiUrl()`),
-  `apps/web/src/lib/storeStatus.ts`, `apps/web/src/proxy.ts`,
-  `apps/web/src/lib/adminAuthApi.ts`, `apps/web/src/lib/authApi.ts`, and the
-  route handlers that import those helpers
-  (`app/api/admin-proxy/[...path]`, `app/api/cart-validate`,
-  `app/api/discount/preview`, `app/api/search-suggest`,
-  `app/api/zip-check`, and the order/auth route handlers). Compose should add
-  an internal URL (for example `API_INTERNAL_URL=http://api:4000`) while
-  keeping the public `NEXT_PUBLIC_API_URL` for browser-facing values.
-  `STOREFRONT_API_KEY` also stays server-only in those calls.
-- Add named volumes for Postgres and media, healthchecks, restart policies,
-  log rotation, and an internal network.
-- Publish only the edge ports in production; publish API/web ports on localhost
-  for development.
-- Tests: `docker compose up -d`; migrations run once; `/health` is green;
-  admin login works; image upload survives an API restart; Postgres data and
-  media survive `docker compose down` without `-v`; database port is not
-  publicly exposed.
+- Added `docker-compose.stack.yml` with `postgres`, one-shot `migrate`, `api`,
+  `web`, and Caddy 2 `edge` services on one user-defined network. Only
+  `127.0.0.1:${EDGE_HOST_PORT:-8080}` is published. API/web ports are exposed
+  only inside the network, and PostgreSQL has no published port.
+- Added named `pgdata` and `media` volumes, healthchecks, restart policies,
+  log rotation (`json-file`, 10 MB, 3 files), `no-new-privileges`, `cap_drop:
+  ALL`, and read-only roots for api/web. API uses `/tmp`; web uses `/tmp` and
+  `/app/apps/web/.next/cache` tmpfs mounts. Both worked under the smoke test,
+  including image upload and serving.
+- Added `API_INTERNAL_URL` as a runtime-only server value. `apiBaseUrl()` in
+  `apps/web/src/lib/apiBaseUrl.ts` reads it at request time and falls back to
+  `NEXT_PUBLIC_API_URL`. It is used by `publicApi.ts`, `storeStatus.ts`,
+  `proxy.ts`, `authApi.ts`, `adminAuthApi.ts`, and the admin proxy. Browser
+  values remain `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_MEDIA_BASE_URL`.
+- Added `deploy/Caddyfile`: plain HTTP on `:80`, 50 MB request body limit,
+  compression, security headers without HSTS/CSP, logs to stdout with Cookie
+  and code/token query keys removed, `/media/*` and `/webhooks/stripe` to the
+  API, and everything else to the web app.
+- Added `.env.compose.example`, the ignored `.env.compose`, and
+  `pnpm docker:stack:init`, `:up`, `:down`, `:logs`, `:reset -- --yes`, and
+  `:smoke`. Init generates alphanumeric Postgres, admin, and storefront
+  secrets without printing them.
+- The compiled `dist/scripts/createOwner.js` entry exists and is documented
+  for owner bootstrap.
+- Tests: `pnpm docker:stack:smoke` passes through the edge: storefront,
+  admin login page, robots, media 404, Stripe webhook 400, admin redirect,
+  API public route not exposed, edge-only published port, non-root users,
+  migrations, category seed, owner creation, real admin code login, admin
+  product/image upload, media 200 `image/webp` with `nosniff`, foreign-origin
+  403, image/product delete and empty-folder cleanup, API restart health and
+  data persistence, and migrate exit code/count. The smoke project
+  (`zayn-smoke`) cleans up all of its containers, networks, volumes, and temp
+  env file.
 
 ### Phase 10 - Cloudflare Tunnel and edge configuration
 
 - Add the Cloudflare Tunnel service or systemd unit and route the public web
-  hostname to the web container and `/media/*` to the API.
-- If Caddy is used for local TLS or headers, define the upstreams and security
-  headers; otherwise use Cloudflare Tunnel ingress rules only.
+  hostname to the edge, with `/media/*` and `/webhooks/stripe` reaching the API
+  through Caddy. Replace the local HTTP listener with HTTPS at the tunnel edge.
+- Handle the real visitor IP: configure Caddy `trusted_proxies` and/or use
+  Cloudflare's real-IP header, then verify `requestGuards.getVisitorIp()` and
+  the API's `x-visitor-ip` forwarding receive the actual client address.
+- Make secure-cookie behavior explicit. The local Phase 9 stack runs over HTTP;
+  production must use HTTPS-only admin/customer cookies and HSTS.
+- Set the public HTTPS Stripe webhook URL and matching
+  `STRIPE_WEBHOOK_SECRET`.
+- Set `NEXT_PUBLIC_SITE_URL` to the final public web origin for the admin
+  same-origin check, and preserve the original `Host` through Caddy.
 - Restrict admin paths with Cloudflare Access or WAF rules if desired.
 - Tests: public storefront loads through the tunnel; admin login sets a Secure
   HttpOnly cookie; media URLs load and cache; HTTP redirects to HTTPS; direct

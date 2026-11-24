@@ -1,4 +1,5 @@
 import { defaultStoreOpen } from "@zayn/shared";
+import { apiBaseUrl } from "./apiBaseUrl";
 import { APP_ENV } from "./appEnv";
 
 const API_TIMEOUT_MS = 2_500;
@@ -13,7 +14,7 @@ export async function readStoreOpen(): Promise<boolean> {
     return cachedStatus.storeOpen;
   }
 
-  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+  const base = apiBaseUrl();
   const key = process.env.STOREFRONT_API_KEY;
 
   try {

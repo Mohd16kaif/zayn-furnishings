@@ -1,0 +1,662 @@
+import { spawnSync } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import {
+  createComposeEnvValues,
+  randomAlphanumeric,
+  writeComposeEnvFile,
+} from "./compose-init-env.mjs";
+
+const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const COMPOSE_FILE = "docker-compose.stack.yml";
+const PROJECT = "zayn-smoke";
+const EDGE_PORT = "18080";
+const EDGE = `http://localhost:${EDGE_PORT}`;
+const API_IMAGE = "zayn-api:stack";
+const WEB_IMAGE = "zayn-web:stack";
+
+let envDir = null;
+let envPath = null;
+
+function docker(args, options = {}) {
+  const result = spawnSync("docker", args, {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    stdio: options.inherit ? "inherit" : "pipe",
+    timeout: options.timeout ?? 120_000,
+    shell: false,
+    env: {
+      ...process.env,
+      COMPOSE_ENV_FILE: envPath ?? process.env.COMPOSE_ENV_FILE,
+    },
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0 && !options.allowFailure) {
+    throw new Error(
+      `docker ${args.slice(0, 2).join(" ")} failed with exit code ${result.status}`,
+    );
+  }
+
+  return result;
+}
+
+function compose(args, options = {}) {
+  return docker(
+    [
+      "compose",
+      "-p",
+      PROJECT,
+      "-f",
+      COMPOSE_FILE,
+      "--env-file",
+      envPath,
+      ...args,
+    ],
+    options,
+  );
+}
+
+function captureCompose(args, options = {}) {
+  const result = compose(args, options);
+
+  return result.stdout.trim();
+}
+
+function check(name, condition, detail = "") {
+  if (!condition) {
+    throw new Error(`FAIL ${name}${detail ? `: ${detail}` : ""}`);
+  }
+
+  console.log(`PASS ${name}${detail ? `: ${detail}` : ""}`);
+}
+
+async function waitFor(checkFn, label, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+
+  while (Date.now() < deadline) {
+    try {
+      const value = await checkFn();
+
+      if (value) {
+        return value;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ""}`,
+  );
+}
+
+async function fetchTimeout(url, options = {}, timeoutMs = 15_000) {
+  return fetch(url, {
+    ...options,
+    redirect: "manual",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
+function serviceContainer(service, all = false) {
+  const id = captureCompose([
+    "ps",
+    ...(all ? ["-a"] : []),
+    "-q",
+    service,
+  ]);
+
+  if (!id) {
+    throw new Error(`No container found for compose service ${service}.`);
+  }
+
+  return id.split(/\r?\n/)[0].trim();
+}
+
+function inspect(format, target) {
+  return docker([
+    "inspect",
+    "--format",
+    format,
+    target,
+  ]).stdout.trim();
+}
+
+async function waitForHealthy(containerId, label) {
+  await waitFor(() => {
+    const status = inspect("{{.State.Health.Status}}", containerId);
+    return status === "healthy";
+  }, label);
+}
+
+async function waitForEdge() {
+  await waitFor(async () => {
+    try {
+      const response = await fetchTimeout(`${EDGE}/`);
+      return response.status < 500;
+    } catch {
+      return false;
+    }
+  }, "edge");
+}
+
+function extractDevCode(apiContainer) {
+  const logs = docker(["logs", apiContainer]).stdout;
+  const matches = [
+    ...logs.matchAll(
+      /DEV ONLY admin login code for [^:\r\n]+:\s*(\d{6})/g,
+    ),
+  ];
+
+  if (matches.length === 0) {
+    throw new Error("Dev-only admin login code was not found in API logs.");
+  }
+
+  return matches[matches.length - 1][1];
+}
+
+function cookieFromResponse(response) {
+  const setCookies =
+    response.headers.getSetCookie?.() ??
+    [response.headers.get("set-cookie") ?? ""];
+  const session = setCookies
+    .map((value) => value.split(";")[0]?.trim())
+    .find((value) => value?.startsWith("zf_admin_session="));
+
+  if (!session) {
+    throw new Error("Admin session cookie was not set.");
+  }
+
+  return session;
+}
+
+function imageSizeBytes(image) {
+  return Number(inspect("{{.Size}}", image));
+}
+
+function mb(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function main() {
+  envDir = await mkdtemp(path.join(tmpdir(), "zayn-stack-smoke-"));
+  envPath = path.join(envDir, ".env");
+
+  const suffix = randomAlphanumeric(8);
+  const ownerEmail = `stack-smoke-${suffix}@example.com`;
+  const values = createComposeEnvValues({
+    POSTGRES_USER: `u${randomAlphanumeric(8)}`,
+    POSTGRES_PASSWORD: randomAlphanumeric(32),
+    POSTGRES_DB: `db_${randomAlphanumeric(8)}`,
+    NODE_ENV: "development",
+    APP_ENV: "development",
+    EDGE_HOST_PORT: EDGE_PORT,
+    NEXT_PUBLIC_API_URL: EDGE,
+    NEXT_PUBLIC_MEDIA_BASE_URL: EDGE,
+    NEXT_PUBLIC_SITE_URL: EDGE,
+    NEXT_PUBLIC_APP_ENV: "development",
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "",
+    MEDIA_PUBLIC_BASE_URL: EDGE,
+    WEB_ORIGIN: EDGE,
+    ADMIN_AUTH_SECRET: randomAlphanumeric(48),
+    STOREFRONT_API_KEY: randomAlphanumeric(48),
+    OWNER_EMAIL: ownerEmail,
+    STRIPE_SECRET_KEY: "sk_test_stack_smoke_not_real",
+    STRIPE_WEBHOOK_SECRET: "whsec_stack_smoke_not_real",
+    RESEND_API_KEY: "",
+    EMAIL_FROM: "",
+    TWILIO_ACCOUNT_SID: "",
+    TWILIO_AUTH_TOKEN: "",
+    TWILIO_VERIFY_SERVICE_SID: "",
+    APPLE_PAY_DOMAIN_ASSOCIATION: "",
+  });
+
+  await writeComposeEnvFile(envPath, values);
+
+  compose(["build"], { inherit: true, timeout: 1_800_000 });
+  compose(["up", "-d", "--wait"], {
+    inherit: true,
+    timeout: 900_000,
+  });
+  await waitForEdge();
+  check("Compose stack starts and the edge responds", true);
+
+  compose(
+    [
+      "run",
+      "--rm",
+      "--no-deps",
+      "api",
+      "node",
+      "dist/scripts/seedCategories.js",
+    ],
+    { timeout: 120_000 },
+  );
+  check("Compiled category seed command succeeds", true);
+
+  const apiContainer = serviceContainer("api");
+  const webContainer = serviceContainer("web");
+  const caddyContainer = serviceContainer("edge");
+  const postgresContainer = serviceContainer("postgres");
+  const migrateContainer = serviceContainer("migrate", true);
+
+  const edgeResponse = await fetchTimeout(`${EDGE}/`);
+  const edgeBody = await edgeResponse.text();
+  check(
+    "GET / through the edge returns 200",
+    edgeResponse.status === 200,
+    `HTTP ${edgeResponse.status}`,
+  );
+  check(
+    "Storefront HTML rendered",
+    edgeBody.includes("Zayn Furnishings") && edgeBody.includes("zf-nav"),
+    `${edgeBody.length} bytes`,
+  );
+
+  const login = await fetchTimeout(`${EDGE}/admin/login`);
+  check(
+    "GET /admin/login through the edge returns 200",
+    login.status === 200,
+    `HTTP ${login.status}`,
+  );
+
+  const robots = await fetchTimeout(`${EDGE}/robots.txt`);
+  check(
+    "GET /robots.txt through the edge returns 200",
+    robots.status === 200,
+    `HTTP ${robots.status}`,
+  );
+
+  const badMedia = await fetchTimeout(`${EDGE}/media/bad/path`);
+  check(
+    "Bad /media path returns 404 from the API",
+    badMedia.status === 404,
+    `HTTP ${badMedia.status}`,
+  );
+
+  const stripeWebhook = await fetchTimeout(`${EDGE}/webhooks/stripe`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  check(
+    "Invalid Stripe webhook signature returns 400 from the API",
+    stripeWebhook.status === 400,
+    `HTTP ${stripeWebhook.status}`,
+  );
+
+  const adminPage = await fetchTimeout(`${EDGE}/admin/products`);
+  const adminLocation = adminPage.headers.get("location") ?? "";
+  check(
+    "GET /admin/products without a cookie redirects to /admin/login",
+    [302, 303, 307, 308].includes(adminPage.status) &&
+      adminLocation.includes("/admin/login"),
+    `HTTP ${adminPage.status}`,
+  );
+
+  const publicApiAtEdge = await fetchTimeout(
+    `${EDGE}/api/public/categories`,
+  );
+  check(
+    "GET /api/public/categories at the edge is not API JSON",
+    publicApiAtEdge.status === 404,
+    `HTTP ${publicApiAtEdge.status}`,
+  );
+
+  for (const [service, port] of [
+    ["postgres", "5432"],
+    ["api", "4000"],
+    ["web", "3000"],
+  ]) {
+    let published = "";
+
+    try {
+      published = captureCompose(["port", service, port]);
+    } catch {
+      published = "";
+    }
+
+    check(
+      `${service} has no published host port`,
+      published.length === 0 || published.endsWith(":0"),
+      published || "none",
+    );
+  }
+
+  const edgePort = captureCompose(["port", "edge", "80"]);
+  check(
+    "Only the edge publishes a host port",
+    edgePort === `127.0.0.1:${EDGE_PORT}`,
+    edgePort,
+  );
+
+  const apiUid = docker(["exec", apiContainer, "id", "-u"]).stdout.trim();
+  const webUid = docker(["exec", webContainer, "id", "-u"]).stdout.trim();
+  const migrateUser = inspect("{{.Config.User}}", migrateContainer);
+  check(
+    "API runs as non-root",
+    apiUid !== "0" && apiUid !== "root",
+    `uid=${apiUid}`,
+  );
+  check(
+    "Web runs as non-root",
+    webUid !== "0" && webUid !== "root",
+    `uid=${webUid}`,
+  );
+  check(
+    "Migrate image user is non-root",
+    migrateUser !== "0" && migrateUser !== "root" && migrateUser !== "",
+    migrateUser,
+  );
+  check(
+    "Caddy is running",
+    Boolean(caddyContainer),
+    "caddy:2",
+  );
+
+  compose(
+    [
+      "run",
+      "--rm",
+      "--no-deps",
+      "api",
+      "node",
+      "dist/scripts/createOwner.js",
+    ],
+    { timeout: 120_000 },
+  );
+  check("Compiled owner creation command succeeds", true);
+
+  const codeRequest = await fetchTimeout(
+    `${EDGE}/api/admin-auth/code-request`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+      },
+      body: JSON.stringify({ email: ownerEmail }),
+    },
+  );
+  check(
+    "Admin code request through the edge succeeds",
+    codeRequest.status === 200,
+    `HTTP ${codeRequest.status}`,
+  );
+
+  const code = await waitFor(
+    async () => {
+      try {
+        return extractDevCode(apiContainer);
+      } catch {
+        return null;
+      }
+    },
+    "dev-only admin code in API logs",
+    20_000,
+  );
+
+  const codeVerify = await fetchTimeout(
+    `${EDGE}/api/admin-auth/code-verify`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+      },
+      body: JSON.stringify({ email: ownerEmail, code }),
+    },
+  );
+  check(
+    "Admin code verification through the edge succeeds",
+    codeVerify.status === 200,
+    `HTTP ${codeVerify.status}`,
+  );
+
+  const adminCookie = cookieFromResponse(codeVerify);
+  const me = await fetchTimeout(`${EDGE}/api/admin-auth/me`, {
+    headers: { cookie: adminCookie },
+  });
+  check(
+    "GET /api/admin-auth/me with the session succeeds",
+    me.status === 200,
+    `HTTP ${me.status}`,
+  );
+
+  const productResponse = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: JSON.stringify({
+        name: `Stack smoke ${suffix}`,
+        price_cents: 1234,
+        sku: `STACK-${suffix}`,
+        status: "draft",
+      }),
+    },
+  );
+  check(
+    "Throwaway product creation through the admin proxy succeeds",
+    productResponse.status === 201,
+    `HTTP ${productResponse.status}`,
+  );
+  const product = await productResponse.json();
+
+  const imageBytes = await readFile(
+    path.join(
+      REPO_ROOT,
+      "apps",
+      "web",
+      "public",
+      "images",
+      "home",
+      "hero-1.jpg",
+    ),
+  );
+  const form = new FormData();
+  form.append(
+    "files",
+    new Blob([imageBytes], { type: "image/jpeg" }),
+    "hero-1.jpg",
+  );
+
+  const uploadResponse = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products/${product.id}/images`,
+    {
+      method: "POST",
+      headers: {
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: form,
+    },
+    30_000,
+  );
+  check(
+    "Image upload through the admin proxy returns 201",
+    uploadResponse.status === 201,
+    `HTTP ${uploadResponse.status}`,
+  );
+  const uploaded = await uploadResponse.json();
+  const uploadedImage = Array.isArray(uploaded) ? uploaded[0] : null;
+
+  check(
+    "Uploaded image URL uses the stack media base URL",
+    typeof uploadedImage?.url === "string" &&
+      uploadedImage.url.startsWith(`${EDGE}/media/products/`),
+    "media URL matched",
+  );
+
+  const imageResponse = await fetchTimeout(uploadedImage.url);
+  const imageContentType = imageResponse.headers.get("content-type");
+  const imageNosniff =
+    imageResponse.headers.get("x-content-type-options") ?? "";
+  check(
+    "Uploaded image loads through the edge",
+    imageResponse.status === 200 &&
+      imageContentType === "image/webp" &&
+      imageNosniff.toLowerCase().includes("nosniff"),
+    `HTTP ${imageResponse.status}, ${imageContentType}, nosniff=${imageNosniff || "missing"}`,
+  );
+
+  const foreignOrigin = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://evil.example",
+        cookie: adminCookie,
+      },
+      body: "{}",
+    },
+  );
+  check(
+    "Foreign Origin mutation returns 403",
+    foreignOrigin.status === 403,
+    `HTTP ${foreignOrigin.status}`,
+  );
+
+  const deleteImage = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products/${product.id}/images/${uploadedImage.id}`,
+    {
+      method: "DELETE",
+      headers: { origin: EDGE, cookie: adminCookie },
+    },
+  );
+  check(
+    "Throwaway image deletion succeeds",
+    deleteImage.status === 200,
+    `HTTP ${deleteImage.status}`,
+  );
+
+  const deleteProduct = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products/${product.id}`,
+    {
+      method: "DELETE",
+      headers: { origin: EDGE, cookie: adminCookie },
+    },
+  );
+  check(
+    "Throwaway product deletion succeeds",
+    deleteProduct.status === 200,
+    `HTTP ${deleteProduct.status}`,
+  );
+
+  const storedPath = String(uploadedImage.storage_path ?? "");
+  const filePath = `/data/media/${storedPath}`;
+  const folderPath = `/data/media/products/${product.id}`;
+  const removed = docker([
+    "exec",
+    apiContainer,
+    "node",
+    "-e",
+    `const fs = require('fs'); const file = ${JSON.stringify(filePath)}; const folder = ${JSON.stringify(folderPath)}; if (fs.existsSync(file) || fs.existsSync(folder)) process.exit(1); console.log('removed');`,
+  ]);
+  check(
+    "Deleted media file and empty product folder are gone",
+    removed.stdout.trim() === "removed",
+    "removed",
+  );
+
+  compose(["restart", "api"], { timeout: 120_000 });
+  await waitForHealthy(apiContainer, "API after restart");
+  check("API health recovers after restart", true);
+
+  const categoriesAfterRestart = JSON.parse(
+    docker([
+      "exec",
+      apiContainer,
+      "node",
+      "-e",
+      "fetch('http://127.0.0.1:4000/api/public/categories').then(async (response) => { const body = await response.json(); console.log(JSON.stringify({ status: response.status, count: Array.isArray(body) ? body.length : -1 })); })",
+    ]).stdout.trim(),
+  );
+  check(
+    "Seeded category data persisted across the API restart",
+    categoriesAfterRestart.status === 200 && categoriesAfterRestart.count > 0,
+    `HTTP ${categoriesAfterRestart.status}, categories=${categoriesAfterRestart.count}`,
+  );
+
+  const migrateExitCode = inspect(
+    "{{.State.ExitCode}}",
+    migrateContainer,
+  );
+  const migrateCount = docker([
+    "ps",
+    "-a",
+    "-q",
+    "--filter",
+    `label=com.docker.compose.project=${PROJECT}`,
+    "--filter",
+    "label=com.docker.compose.service=migrate",
+  ]).stdout.trim().split(/\r?\n/).filter(Boolean).length;
+  check(
+    "Migrate completed with code 0",
+    migrateExitCode === "0",
+    migrateExitCode,
+  );
+  check(
+    "Migrate did not run twice on API restart",
+    migrateCount === 1,
+    `${migrateCount} migrate container`,
+  );
+
+  console.log(`API image size: ${mb(imageSizeBytes(API_IMAGE))}`);
+  console.log(`Web image size: ${mb(imageSizeBytes(WEB_IMAGE))}`);
+  console.log("PASS: Compose stack smoke test completed.");
+}
+
+try {
+  await main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+} finally {
+  if (envPath) {
+    compose(["down", "-v", "--remove-orphans"], {
+      allowFailure: true,
+      timeout: 300_000,
+    });
+
+    for (const [kind, args] of [
+      ["container", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${PROJECT}`]],
+      ["network", ["network", "ls", "-q", "--filter", `label=com.docker.compose.project=${PROJECT}`]],
+      ["volume", ["volume", "ls", "-q", "--filter", `label=com.docker.compose.project=${PROJECT}`]],
+    ]) {
+      const ids = docker(args, { allowFailure: true })
+        .stdout.trim()
+        .split(/\r?\n/)
+        .filter(Boolean);
+
+      for (const id of ids) {
+        if (kind === "container") {
+          docker(["rm", "-f", id], { allowFailure: true });
+        } else if (kind === "network") {
+          docker(["network", "rm", id], { allowFailure: true });
+        } else {
+          docker(["volume", "rm", "-f", id], { allowFailure: true });
+        }
+      }
+    }
+  }
+
+  if (envDir) {
+    await rm(envDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}

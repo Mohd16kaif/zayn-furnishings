@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
-import { apiUrl, requestHeaders } from "./publicApi";
+import { apiBaseUrl } from "./apiBaseUrl";
+import { requestHeaders } from "./publicApi";
 
 export const SESSION_COOKIE_NAME = "zf_session";
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -60,7 +61,7 @@ export async function callApi(
     headers["Content-Type"] = "application/json";
   }
 
-  return fetch(`${apiUrl()}${path}`, {
+  return fetch(`${apiBaseUrl()}${path}`, {
     method: options.method ?? "GET",
     headers,
     body:

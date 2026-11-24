@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { apiBaseUrl } from "@/lib/apiBaseUrl";
 import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminSessionOptions";
 import { IS_STAGING } from "@/lib/appEnv";
 import { readStoreOpen } from "@/lib/storeStatus";
@@ -17,9 +18,7 @@ const productExistenceCache = new Map<
 >();
 
 function publicApiUrl(path: string): string {
-  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
-  return `${base}/api/public${path}`;
+  return `${apiBaseUrl()}/api/public${path}`;
 }
 
 function storefrontHeaders(): Record<string, string> {

@@ -12,20 +12,21 @@ import {
   type PublicStoreSettings,
 } from "@zayn/shared";
 import { APP_ENV } from "@/lib/appEnv";
+import { apiBaseUrl } from "@/lib/apiBaseUrl";
 
 /**
  * Server-side data layer for the public API.
  *
  * Every helper:
- * - fetches GET <NEXT_PUBLIC_API_URL>/api/public/... with a short revalidate
- *   window (5 seconds for settings, 60 seconds for catalog content)
+ * - fetches GET <apiBaseUrl()>/api/public/... with a short revalidate window
+ *   (5 seconds for settings, 60 seconds for catalog content). The server-only
+ *   API_INTERNAL_URL overrides NEXT_PUBLIC_API_URL when set.
  * - sends `x-storefront-key` (from the non-public STOREFRONT_API_KEY secret)
  *   and, for visitor-triggered routes, the forwarded `x-visitor-ip`
  * - NEVER throws: a down API returns a typed safe fallback so a page can
  *   render an empty menu / friendly notice instead of failing.
  */
 
-const DEFAULT_API_URL = "http://localhost:4000";
 const REVALIDATE_SECONDS = 60;
 const SETTINGS_REVALIDATE_SECONDS = 5;
 const API_TIMEOUT_MS = 8_000;
@@ -138,9 +139,7 @@ export type DiscountPreview =
     }
   | { valid: false; error: string };
 
-export function apiUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
-}
+export { apiBaseUrl };
 
 export function requestHeaders(
   visitorIp?: string | null,
@@ -185,7 +184,7 @@ async function safeGet<T>(
   visitorIp?: string | null,
   tags: string[] = [],
 ): Promise<ApiResult<T>> {
-  const url = `${apiUrl()}/api/public${path}`;
+  const url = `${apiBaseUrl()}/api/public${path}`;
 
   try {
     const response = await fetch(url, {
@@ -429,7 +428,7 @@ export async function validateCart(
   zip?: string,
   visitorIp?: string | null,
 ): Promise<ApiResult<CartValidation>> {
-  const url = `${apiUrl()}/api/public/cart/validate`;
+  const url = `${apiBaseUrl()}/api/public/cart/validate`;
 
   try {
     const response = await fetch(url, {
@@ -489,7 +488,7 @@ export async function previewDiscount(
   discountCode: string,
   visitorIp?: string | null,
 ): Promise<DiscountPreviewResult> {
-  const url = `${apiUrl()}/api/public/discount/preview`;
+  const url = `${apiBaseUrl()}/api/public/discount/preview`;
 
   try {
     const response = await fetch(url, {
@@ -560,7 +559,7 @@ export async function checkDelivery(
     search.set("subtotal_cents", String(subtotalCents));
   }
 
-  const url = `${apiUrl()}/api/public/delivery/check?${search.toString()}`;
+  const url = `${apiBaseUrl()}/api/public/delivery/check?${search.toString()}`;
 
   try {
     const response = await fetch(url, {
