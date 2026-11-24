@@ -111,17 +111,116 @@ services:
       - stack
 
   edge:
-    image: caddy:2
+    image: caddy:2.11.9
     restart: unless-stopped
     ports:
       - "127.0.0.1:${EDGE_HOST_PORT:-8080}:80"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-300}
     depends_on:
       web:
         condition: service_healthy
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1/admin/login"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    logging: *logging
+    networks:
+      - stack
+
+  # Named tunnel. TUNNEL_TOKEN is required and is read from the environment so
+  # it never appears on the cloudflared command line or in logs.
+  tunnel-token-check:
+    image: alpine:3.20
+    profiles: ["tunnel"]
+    restart: "no"
+    command:
+      - sh
+      - -ec
+      - |
+        test -n "$$TUNNEL_TOKEN" || {
+          echo "TUNNEL_TOKEN is required for the tunnel profile. Set it in .env.compose; its value is never printed." >&2
+          exit 1
+        }
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *logging
+    networks:
+      - stack
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.11.2
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:2000", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+      # auto, 4, or 6. Useful on an IPv6-only VPS (unverified).
+      TUNNEL_EDGE_IP_VERSION: ${TUNNEL_EDGE_IP_VERSION:-auto}
+    depends_on:
+      tunnel-token-check:
+        condition: service_completed_successfully
+      edge:
+        condition: service_healthy
+    # cloudflared 2026.11.2 has `tunnel ready`, which queries the metrics
+    # server's /ready endpoint and exits non-zero until the tunnel is ready.
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging: *logging
+    networks:
+      - stack
+
+  # TESTING ONLY: no account, no token, ephemeral trycloudflare.com URL.
+  quicktunnel:
+    image: cloudflare/cloudflared:2026.11.2
+    profiles: ["quicktunnel"]
+    restart: unless-stopped
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --metrics
+      - 127.0.0.1:2000
+      - --url
+      - http://edge:80
+    environment:
+      TUNNEL_EDGE_IP_VERSION: ${TUNNEL_EDGE_IP_VERSION:-auto}
+    depends_on:
+      edge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     logging: *logging
     networks:
       - stack

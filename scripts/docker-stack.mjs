@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -92,6 +92,113 @@ function requireEnvFile() {
   }
 }
 
+const PUBLIC_ORIGIN_KEYS = [
+  "NEXT_PUBLIC_API_URL",
+  "NEXT_PUBLIC_SITE_URL",
+  "NEXT_PUBLIC_MEDIA_BASE_URL",
+  "MEDIA_PUBLIC_BASE_URL",
+];
+
+/** Reads only simple KEY=value pairs. Values are never logged. */
+function readComposeEnv() {
+  const values = new Map();
+
+  try {
+    const text = readFileSync(ENV_PATH, "utf8");
+
+    for (const line of text.split(/\r?\n/)) {
+      if (line.trimStart().startsWith("#")) {
+        continue;
+      }
+
+      const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+
+      if (!match) {
+        continue;
+      }
+
+      let value = match[2];
+
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+
+      values.set(match[1], value);
+    }
+  } catch {
+    // The caller reports a missing file before this point.
+  }
+
+  return values;
+}
+
+function publicOriginProblem(value) {
+  if (!value) {
+    return "unset";
+  }
+
+  let url;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return "invalid URL";
+  }
+
+  if (url.protocol !== "https:") {
+    return "not https";
+  }
+
+  const host = url.hostname.toLowerCase();
+
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "[::1]"
+  ) {
+    return "localhost";
+  }
+
+  return null;
+}
+
+function tunnelWarnings() {
+  const values = readComposeEnv();
+  const problems = PUBLIC_ORIGIN_KEYS.map((key) => [
+    key,
+    publicOriginProblem(values.get(key) ?? ""),
+  ]).filter(([, problem]) => problem);
+  const warnings = [];
+
+  if (problems.length > 0) {
+    warnings.push(
+      `Tunnel profile active, but these public origins are not public HTTPS URLs: ${problems
+        .map(([key, problem]) => `${key} (${problem})`)
+        .join(", ")}.`,
+    );
+  } else {
+    warnings.push(
+      "Tunnel profile active. Public origins look like public HTTPS URLs.",
+    );
+  }
+
+  warnings.push(
+    "NEXT_PUBLIC_SITE_URL, NEXT_PUBLIC_MEDIA_BASE_URL and NEXT_PUBLIC_API_URL are baked into the web image at build time. Change them in .env.compose and rebuild the web image; restart the api after changing MEDIA_PUBLIC_BASE_URL or WEB_ORIGIN.",
+  );
+
+  if ((values.get("NODE_ENV") ?? "") !== "production") {
+    warnings.push(
+      "NODE_ENV is not production, so admin and customer cookies will not set the Secure flag. Use NODE_ENV=production for a real HTTPS tunnel deployment.",
+    );
+  }
+
+  return warnings;
+}
+
 async function waitForEdge(url, timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
@@ -118,10 +225,63 @@ async function waitForEdge(url, timeoutMs = 180_000) {
   );
 }
 
-async function up() {
+const ALL_PROFILES = ["--profile", "tunnel", "--profile", "quicktunnel"];
+
+async function waitForQuickTunnelUrl(timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const result = captureCompose([
+      "logs",
+      "--tail",
+      "500",
+      "quicktunnel",
+    ]);
+
+    if (result.status === 0) {
+      const matches = result.stdout.match(
+        /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi,
+      );
+
+      if (matches && matches.length > 0) {
+        return matches[matches.length - 1];
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+
+  throw new Error(
+    "Timed out waiting for the quick tunnel URL in the cloudflared logs.",
+  );
+}
+
+async function up(profile) {
   requireEnvFile();
+
+  if (profile) {
+    if (
+      profile === "tunnel" &&
+      !(
+        process.env.TUNNEL_TOKEN?.trim() ||
+        (readComposeEnv().get("TUNNEL_TOKEN") ?? "").trim()
+      )
+    ) {
+      throw new Error(
+        "TUNNEL_TOKEN is missing or empty in .env.compose. The named tunnel profile needs the token from the Cloudflare dashboard; the token is never printed.",
+      );
+    }
+
+    for (const warning of tunnelWarnings()) {
+      console.warn(warning);
+    }
+  }
+
   compose(["build"]);
-  compose(["up", "-d", "--wait"], { timeout: 900_000 });
+  compose(
+    [...(profile ? ["--profile", profile] : []), "up", "-d", "--wait"],
+    { timeout: 900_000 },
+  );
 
   const portResult = captureCompose(["port", "edge", "80"]);
 
@@ -138,16 +298,28 @@ async function up() {
 
   await waitForEdge(`http://127.0.0.1:${port}/`);
   console.log(`Stack is up at http://localhost:${port}`);
+
+  if (profile === "quicktunnel") {
+    const quickUrl = await waitForQuickTunnelUrl();
+    console.log(`Quick tunnel URL (testing only): ${quickUrl}`);
+    console.warn(
+      "Quick tunnel hostnames change on every start and are not baked into NEXT_PUBLIC_SITE_URL at build time. Admin login through this URL needs a web rebuild with this origin; use a named tunnel for a stable HTTPS deployment.",
+    );
+  } else if (profile === "tunnel") {
+    console.log(
+      "Named tunnel profile started. Use the public hostname configured in the Cloudflare dashboard.",
+    );
+  }
 }
 
 function down() {
   requireEnvFile();
-  compose(["down", "--remove-orphans"]);
+  compose([...ALL_PROFILES, "down", "--remove-orphans"]);
 }
 
 function logs() {
   requireEnvFile();
-  compose(["logs", "-f", "--tail", "200"]);
+  compose([...ALL_PROFILES, "logs", "-f", "--tail", "200"]);
 }
 
 function reset() {
@@ -161,7 +333,7 @@ function reset() {
     return;
   }
 
-  compose(["down", "-v", "--remove-orphans"]);
+  compose([...ALL_PROFILES, "down", "-v", "--remove-orphans"]);
 }
 
 function smoke() {
@@ -177,6 +349,10 @@ const command = process.argv[2];
 try {
   if (command === "up") {
     await up();
+  } else if (command === "up-tunnel") {
+    await up("tunnel");
+  } else if (command === "up-quick") {
+    await up("quicktunnel");
   } else if (command === "down") {
     down();
   } else if (command === "logs") {
@@ -187,7 +363,7 @@ try {
     smoke();
   } else {
     console.error(
-      "Usage: node scripts/docker-stack.mjs <up|down|logs|reset --yes|smoke>",
+      "Usage: node scripts/docker-stack.mjs <up|up-tunnel|up-quick|down|logs|reset --yes|smoke>",
     );
     process.exitCode = 1;
   }

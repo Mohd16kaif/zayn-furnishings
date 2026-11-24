@@ -1026,24 +1026,56 @@ real inbox (or the development log-only email sender).
   (`zayn-smoke`) cleans up all of its containers, networks, volumes, and temp
   env file.
 
-### Phase 10 - Cloudflare Tunnel and edge configuration
+### Phase 10 - Cloudflare Tunnel and edge configuration (done)
 
-- Add the Cloudflare Tunnel service or systemd unit and route the public web
-  hostname to the edge, with `/media/*` and `/webhooks/stripe` reaching the API
-  through Caddy. Replace the local HTTP listener with HTTPS at the tunnel edge.
-- Handle the real visitor IP: configure Caddy `trusted_proxies` and/or use
-  Cloudflare's real-IP header, then verify `requestGuards.getVisitorIp()` and
-  the API's `x-visitor-ip` forwarding receive the actual client address.
-- Make secure-cookie behavior explicit. The local Phase 9 stack runs over HTTP;
-  production must use HTTPS-only admin/customer cookies and HSTS.
-- Set the public HTTPS Stripe webhook URL and matching
-  `STRIPE_WEBHOOK_SECRET`.
-- Set `NEXT_PUBLIC_SITE_URL` to the final public web origin for the admin
-  same-origin check, and preserve the original `Host` through Caddy.
-- Restrict admin paths with Cloudflare Access or WAF rules if desired.
-- Tests: public storefront loads through the tunnel; admin login sets a Secure
-  HttpOnly cookie; media URLs load and cache; HTTP redirects to HTTPS; direct
-  container ports are unreachable from the internet; tunnel reconnect works.
+- Added the optional `tunnel` and `quicktunnel` Compose profiles using
+  `cloudflare/cloudflared:2026.11.2` (tag-pinned). Both connect outbound to
+  `http://edge:80`, join the stack network, publish no ports, depend on a
+  healthy edge, drop all capabilities, use `no-new-privileges` and a read-only
+  root with a `/tmp` tmpfs, and rotate logs. The named profile reads
+  `TUNNEL_TOKEN` from the environment and has a one-shot clear-failure guard for
+  an empty token; the quick profile is clearly marked testing-only.
+- Added `pnpm docker:stack:up:tunnel` and `pnpm docker:stack:up:quick`. The
+  quick command waits for and prints the temporary `trycloudflare.com` URL (not
+  a secret). `down`, `logs`, and `reset` include both profiles.
+- Pinned the edge to Caddy 2.11.9 and configured only private/loopback peers as
+  trusted proxies, with `trusted_proxies_strict`, `CF-Connecting-IP` first and
+  `X-Forwarded-For` second. Caddy overwrites `X-Forwarded-For` and `X-Real-IP`
+  with the single validated client IP, sets `X-Forwarded-Proto` to the original
+  scheme, and strips client-supplied `CF-Connecting-IP`, `CF-Visitor`,
+  `X-Visitor-IP`, `X-Storefront-Key`, `X-Admin-Session`, and `Forwarded`.
+- `requestGuards.getVisitorIp()` already reads `x-forwarded-for` then
+  `x-real-ip`; the API's storefront-keyed limiter already uses `x-visitor-ip`.
+  No application code change was needed. The web server cannot be tricked by a
+  client-supplied `x-visitor-ip`; the API is not published.
+- Added conservative HSTS (`max-age=300`, no includeSubDomains, no preload)
+  only when the original request was HTTPS, with an `HSTS_MAX_AGE` env knob and
+  documented steps to raise it to 1 day, 30 days, then 180 days.
+- Documented the trust assumption: the edge is safe only because it publishes
+  only `127.0.0.1:${EDGE_HOST_PORT}` and the tunnel is the only ingress. If the
+  edge were exposed directly, `CF-Connecting-IP` and the scheme headers could be
+  spoofed. `docs/DOCKER.md` and `deploy/Caddyfile` state this prominently.
+- The admin `zf_admin_session` and customer `zf_session` cookies remain
+  HttpOnly/SameSite=Lax and set Secure when `NODE_ENV=production`; local HTTP
+  development uses `NODE_ENV=development`. The admin same-origin guard already
+  compares against `NEXT_PUBLIC_SITE_URL`. Public origins are build-time values
+  for the web image, so a domain change requires a rebuild; the stack scripts
+  warn when a tunnel profile is active while public origins still point at
+  localhost, are unset, or are not HTTPS.
+- `docs/DOCKER.md` now covers the tunnel in plain words, quick versus named,
+  the unverified dashboard labels, the `http://edge:80` service mapping, the
+  `https://<domain>/webhooks/stripe` webhook, rebuild steps, HSTS rollout, the
+  IPv6-only VPS note (unverified), and the trust model.
+- Tests: `pnpm docker:stack:smoke` asserts the Docker gateway peer is private,
+  Caddy derives the visitor IP from `CF-Connecting-IP` (a client-supplied
+  `X-Forwarded-For`/`X-Real-IP`/`x-visitor-ip` does not change it), separate
+  rate-limit buckets for two `CF-Connecting-IP` values, forged
+  `x-admin-session`/`x-storefront-key` headers do not authenticate, HSTS is
+  present only on simulated HTTPS with `max-age=300`, the edge is still the only
+  published port on `127.0.0.1`, and both tunnel profiles validate while staying
+  out of the default service list. The optional live quick-tunnel round trip is
+  not part of the offline smoke test.
+
 
 ### Phase 11 - Backups and restore drill
 

@@ -189,6 +189,45 @@ function mb(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isPrivateIpv4(value) {
+  const parts = value.split(".").map(Number);
+
+  if (
+    parts.length !== 4 ||
+    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
+    return false;
+  }
+
+  return (
+    parts[0] === 10 ||
+    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+    (parts[0] === 192 && parts[1] === 168)
+  );
+}
+
+async function waitForCaddyAccessLog(containerId, marker) {
+  return waitFor(() => {
+    const logs = docker(["logs", containerId], {
+      allowFailure: true,
+    }).stdout;
+
+    for (const line of logs.split(/\r?\n/)) {
+      if (!line.includes(marker)) {
+        continue;
+      }
+
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }, "Caddy access log entry for the tunnel probe", 15_000);
+}
+
 async function main() {
   envDir = await mkdtemp(path.join(tmpdir(), "zayn-stack-smoke-"));
   envPath = path.join(envDir, ".env");
@@ -264,6 +303,216 @@ async function main() {
     robots.status === 200,
     `HTTP ${robots.status}`,
   );
+
+  check(
+    "Plain HTTP does not send HSTS",
+    robots.headers.get("strict-transport-security") === null,
+    robots.headers.get("strict-transport-security") ?? "absent",
+  );
+
+  const secureRobots = await fetchTimeout(`${EDGE}/robots.txt`, {
+    headers: {
+      "x-forwarded-proto": "https",
+      "cf-connecting-ip": "203.0.113.10",
+    },
+  });
+  check(
+    "HTTPS-simulated request sends conservative HSTS",
+    secureRobots.headers.get("strict-transport-security") ===
+      "max-age=300",
+    secureRobots.headers.get("strict-transport-security") ?? "absent",
+  );
+
+  const cfVisitorRobots = await fetchTimeout(`${EDGE}/robots.txt`, {
+    headers: {
+      "cf-visitor": '{"scheme":"https"}',
+    },
+  });
+  check(
+    "CF-Visitor https also sends HSTS",
+    cfVisitorRobots.headers.get("strict-transport-security") ===
+      "max-age=300",
+    cfVisitorRobots.headers.get("strict-transport-security") ?? "absent",
+  );
+
+  const stackNetworkId = docker([
+    "network",
+    "ls",
+    "-q",
+    "--filter",
+    `label=com.docker.compose.project=${PROJECT}`,
+    "--filter",
+    "label=com.docker.compose.network=stack",
+  ]).stdout
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)[0];
+  const gateway = stackNetworkId
+    ? docker([
+        "network",
+        "inspect",
+        stackNetworkId,
+        "--format",
+        "{{range .IPAM.Config}}{{println .Gateway}}{{end}}",
+      ]).stdout
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)[0]
+    : "";
+  check(
+    "Compose network gateway is a private address",
+    isPrivateIpv4(gateway),
+    gateway || "missing",
+  );
+
+  const probeMarker = `/__tunnel_probe_${suffix}`;
+  const probeResponse = await fetchTimeout(`${EDGE}${probeMarker}`, {
+    headers: {
+      "cf-connecting-ip": "203.0.113.99",
+      "x-forwarded-for": "198.51.100.99",
+      "x-real-ip": "198.51.100.98",
+      "x-visitor-ip": "198.51.100.97",
+      "x-forwarded-proto": "https",
+    },
+  });
+  check(
+    "Tunnel probe reaches the edge",
+    probeResponse.status === 404,
+    `HTTP ${probeResponse.status}`,
+  );
+  const probeLog = await waitForCaddyAccessLog(
+    caddyContainer,
+    probeMarker,
+  );
+  const probeRequest = probeLog.request ?? {};
+  check(
+    "Host requests to the edge arrive from the Docker gateway",
+    probeRequest.remote_ip === gateway,
+    `peer=${probeRequest.remote_ip ?? "missing"}, gateway=${gateway || "missing"}`,
+  );
+  check(
+    "Caddy uses CF-Connecting-IP instead of client-supplied X-Forwarded-For",
+    probeRequest.client_ip === "203.0.113.99",
+    `client=${probeRequest.client_ip ?? "missing"}`,
+  );
+
+  const secureSimulationHeaders = {
+    "content-type": "application/json",
+    "x-forwarded-proto": "https",
+    "cf-connecting-ip": "203.0.113.10",
+    "x-forwarded-for": "198.51.100.10",
+    "x-real-ip": "198.51.100.11",
+    "x-visitor-ip": "198.51.100.12",
+    "x-admin-session": "forged-session",
+    "x-storefront-key": "forged-key",
+  };
+  const zipBody = JSON.stringify({
+    zip: "10001",
+    subtotal_cents: 1000,
+  });
+  const zipStatuses = [];
+
+  for (let index = 0; index < 30; index += 1) {
+    const response = await fetchTimeout(`${EDGE}/api/zip-check`, {
+      method: "POST",
+      headers: secureSimulationHeaders,
+      body: zipBody,
+    });
+
+    zipStatuses.push(response.status);
+  }
+
+  const rateLimited = await fetchTimeout(`${EDGE}/api/zip-check`, {
+    method: "POST",
+    headers: secureSimulationHeaders,
+    body: zipBody,
+  });
+  check(
+    "Per-visitor rate limiter uses the forwarded CF-Connecting-IP",
+    rateLimited.status === 429,
+    `HTTP ${rateLimited.status} after ${zipStatuses.length} requests`,
+  );
+
+  const freshVisitor = await fetchTimeout(`${EDGE}/api/zip-check`, {
+    method: "POST",
+    headers: {
+      ...secureSimulationHeaders,
+      "cf-connecting-ip": "203.0.113.20",
+    },
+    body: zipBody,
+  });
+  check(
+    "A different CF-Connecting-IP gets a separate rate-limit bucket",
+    freshVisitor.status === 200,
+    `HTTP ${freshVisitor.status}`,
+  );
+
+  const spoofedAdminHeaders = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products?page=1&page_size=1`,
+    {
+      headers: {
+        "x-admin-session": "forged-session",
+        "x-storefront-key": "forged-key",
+      },
+    },
+  );
+  check(
+    "Client-supplied admin/storefront headers do not authenticate",
+    spoofedAdminHeaders.status === 401,
+    `HTTP ${spoofedAdminHeaders.status}`,
+  );
+
+  const defaultConfig = compose(["config", "-q"], {
+    allowFailure: true,
+  });
+  check(
+    "Default compose config validates",
+    defaultConfig.status === 0,
+    `exit ${defaultConfig.status}`,
+  );
+
+  const defaultServices = captureCompose(["config", "--services"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+  check(
+    "Tunnel services stay behind profiles",
+    !defaultServices.includes("tunnel") &&
+      !defaultServices.includes("quicktunnel") &&
+      !defaultServices.includes("tunnel-token-check"),
+    defaultServices.join(", "),
+  );
+
+  for (const profile of ["tunnel", "quicktunnel"]) {
+    const profileServices = captureCompose([
+      "--profile",
+      profile,
+      "config",
+      "--services",
+    ])
+      .split(/\r?\n/)
+      .filter(Boolean);
+    const expectedService =
+      profile === "tunnel" ? "tunnel" : "quicktunnel";
+    const otherService =
+      profile === "tunnel" ? "quicktunnel" : "tunnel";
+    check(
+      `${profile} profile includes only its tunnel service`,
+      profileServices.includes(expectedService) &&
+        profileServices.includes("edge") &&
+        !profileServices.includes(otherService),
+      profileServices.join(", "),
+    );
+
+    const configResult = compose(
+      ["--profile", profile, "config", "-q"],
+      { allowFailure: true },
+    );
+    check(
+      `${profile} profile compose config validates`,
+      configResult.status === 0,
+      `exit ${configResult.status}`,
+    );
+  }
 
   const badMedia = await fetchTimeout(`${EDGE}/media/bad/path`);
   check(
@@ -349,7 +598,7 @@ async function main() {
   check(
     "Caddy is running",
     Boolean(caddyContainer),
-    "caddy:2",
+    "caddy:2.11.9",
   );
 
   compose(

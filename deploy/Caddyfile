@@ -1,16 +1,60 @@
-# Local HTTP edge for the Phase 9 Compose stack.
+# Local HTTP edge for the Compose stack, fronted by Cloudflare Tunnel.
 #
-# Phase 10 will add the Cloudflare Tunnel and TLS. Until then this listener is
-# plain HTTP on :80 and only reaches the host at 127.0.0.1 (see compose ports).
-# HSTS is intentionally omitted because this phase has no TLS. A strict CSP is
-# also intentionally omitted because Next.js needs its inline runtime scripts;
-# a compatible policy belongs with the Phase 10 edge work.
+# TRUST MODEL: this is safe only because the edge port is published on
+# 127.0.0.1 and the tunnel is the only ingress. Cloudflare Tunnel connects
+# outbound; no server port is opened to the internet. If the edge were ever
+# exposed directly or reached through another untrusted private proxy, a client
+# could spoof CF-Connecting-IP / X-Forwarded-Proto and be trusted. Never publish
+# this listener on a public interface.
 #
-# Visitor IP note: reverse_proxy sets X-Forwarded-For to the address of the
-# direct peer. Behind Cloudflare in Phase 10, Caddy must use trusted_proxies
-# (or Cloudflare's real-IP header) before the app can see the real visitor IP.
+# Caddy trusts only private/loopback peers: 192.168.0.0/16, 172.16.0.0/12,
+# 10.0.0.0/8, 127.0.0.1/8, fd00::/8, and ::1. In this stack those are the
+# tunnel container and the local Docker gateway used by the published port.
+# For a trusted peer it reads the real client IP from CF-Connecting-IP first,
+# then from X-Forwarded-For (right-to-left due to trusted_proxies_strict).
+# Untrusted peers fall back to their direct socket address, and their
+# CF-Connecting-IP / X-Forwarded-For values are ignored.
+#
+# HSTS is only sent when the original request was HTTPS (CF-Visitor or
+# X-Forwarded-Proto). It starts at 5 minutes with no includeSubDomains/preload.
+# After HTTPS is verified, raise HSTS_MAX_AGE in .env.compose in steps: 86400
+# (1 day), then 2592000 (30 days), then 15552000 (180 days). Do not add
+# includeSubDomains or preload until every subdomain is HTTPS-only.
+#
+# A strict CSP is intentionally omitted because Next.js needs its inline
+# runtime scripts; a compatible policy belongs with later hardening work.
+{
+	servers {
+		trusted_proxies static private_ranges
+		trusted_proxies_strict
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+(proxy_headers) {
+	# Overwrite, never append to, client-supplied forwarding identity headers.
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	header_up X-Forwarded-Proto {vars.scheme}
+	# Remove headers that must only be created by the app server itself.
+	header_up -CF-Connecting-IP
+	header_up -CF-Visitor
+	header_up -X-Visitor-IP
+	header_up -X-Storefront-Key
+	header_up -X-Admin-Session
+	header_up -Forwarded
+}
 
 :80 {
+	# Treat a request as HTTPS-original when the tunnel/Cloudflare says so.
+	# Scheme headers are read for every request, but that is safe only because
+	# this listener is bound to loopback and the tunnel is the only ingress.
+	# If the edge were exposed directly, a client could spoof these headers.
+	@https expression `{header.CF-Visitor}.contains("https") || {header.X-Forwarded-Proto} == "https"`
+	vars @https scheme https
+	@plain expression `!({header.CF-Visitor}.contains("https") || {header.X-Forwarded-Proto} == "https")`
+	vars @plain scheme http
+
 	request_body {
 		max_size 50MB
 	}
@@ -22,6 +66,9 @@
 		?Referrer-Policy strict-origin-when-cross-origin
 		?X-Frame-Options SAMEORIGIN
 	}
+
+	# Conservative first-rollout HSTS. Env default is 300 seconds.
+	header @https Strict-Transport-Security "max-age={$HSTS_MAX_AGE:300}"
 
 	# Access logs go to stdout. Cookies are removed, and common code/token query
 	# keys are removed so login codes, session tokens, and other sensitive query
@@ -45,17 +92,22 @@
 		}
 	}
 
-	# Caddy passes the original Host and adds X-Forwarded-For,
-	# X-Forwarded-Proto, and X-Forwarded-Host by default.
+	# Caddy passes the original Host and sets X-Forwarded-Host by default.
 	handle /media/* {
-		reverse_proxy api:4000
+		reverse_proxy api:4000 {
+			import proxy_headers
+		}
 	}
 
 	handle /webhooks/stripe {
-		reverse_proxy api:4000
+		reverse_proxy api:4000 {
+			import proxy_headers
+		}
 	}
 
 	handle {
-		reverse_proxy web:3000
+		reverse_proxy web:3000 {
+			import proxy_headers
+		}
 	}
 }

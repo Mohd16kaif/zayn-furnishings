@@ -1,7 +1,8 @@
-# Docker images
+# Docker images and stack
 
-Phase 8 builds two production-style images. There is no compose stack yet and
-no registry push in this phase.
+Phase 8 builds two production-style images, Phase 9 adds the Compose stack, and
+Phase 10 adds Cloudflare Tunnel profiles and HTTPS-aware edge behavior. There is
+no registry push in these phases.
 
 - `zayn-api:local`: the Express API from `apps/api`, built with TypeScript and
   run with Node. It serves `/media` from a writable `/data/media` volume.
@@ -158,7 +159,10 @@ edge port:
 | `migrate` | One-shot API image command: `node dist/scripts/migrate.js`. Runs after PostgreSQL is healthy and must complete before the API starts. |
 | `api` | API image. Reaches PostgreSQL by service name, writes `/data/media` on the `media` volume, and is not published to the host. |
 | `web` | Next standalone image. Server code uses `API_INTERNAL_URL=http://api:4000`; browser-facing values stay on `NEXT_PUBLIC_*`. Not published to the host. |
-| `edge` | Caddy 2. The only published port: `127.0.0.1:${EDGE_HOST_PORT:-8080}:80`. Routes `/media/*` and `/webhooks/stripe` to the API and everything else to the web app. |
+| `edge` | Caddy 2.11.9. The only published port: `127.0.0.1:${EDGE_HOST_PORT:-8080}:80`. Routes `/media/*` and `/webhooks/stripe` to the API and everything else to the web app. |
+| `tunnel` | Optional, profile `tunnel`. `cloudflare/cloudflared:2026.11.2` runs a named Cloudflare Tunnel from `TUNNEL_TOKEN`. No published ports. |
+| `quicktunnel` | Optional, profile `quicktunnel`. The same cloudflared image runs an anonymous quick tunnel to `http://edge:80`. Testing only. |
+| `tunnel-token-check` | One-shot profile `tunnel` guard that fails with a clear message when `TUNNEL_TOKEN` is empty. It never prints the token. |
 
 All services share one user-defined Compose network, so `api`, `web`,
 `postgres`, and `edge` resolve by service name. `STOREFRONT_API_KEY` must be the
@@ -215,8 +219,140 @@ pnpm docker:stack:logs
 ```
 
 The code is logged only when `APP_ENV=development` and Resend is not configured.
-This local edge is plain HTTP; Phase 10 adds TLS and the HTTPS-only cookie and
-HSTS behavior.
+The local edge itself stays plain HTTP on `:80`; HTTPS is terminated by
+Cloudflare when a tunnel profile is active. Use `NODE_ENV=development` for the
+local HTTP stack (cookies are not marked Secure and work over HTTP) and
+`NODE_ENV=production` for a real tunnel deployment (cookies are Secure and
+HttpOnly). See "Cloudflare Tunnel" below.
+
+### Cloudflare Tunnel (Phase 10)
+
+A Cloudflare Tunnel is an outbound-only connection from the server to
+Cloudflare. Cloudflare terminates HTTPS for the public hostname and forwards the
+request to Caddy over the private Compose network. The edge keeps publishing
+only `127.0.0.1:${EDGE_HOST_PORT}`; no inbound port is opened on the server.
+
+There are two profiles:
+
+- `pnpm docker:stack:up:quick` starts the `quicktunnel` profile. It needs no
+  Cloudflare account or token, prints a temporary
+  `https://<random>.trycloudflare.com` URL, and is for testing only. Anyone with
+  the URL can reach the stack while it runs. Quick tunnel hostnames change on
+  every start, so they cannot be baked into `NEXT_PUBLIC_SITE_URL`; use a named
+  tunnel for a stable HTTPS origin.
+- `pnpm docker:stack:up:tunnel` starts the `tunnel` profile. It requires
+  `TUNNEL_TOKEN` in `.env.compose` and serves the public hostname configured in
+  the Cloudflare dashboard. The token is passed to cloudflared as an environment
+  variable, never on the command line; it is never printed by the scripts.
+
+Both profiles depend on a healthy edge, join the same Compose network, publish
+no ports, restart unless stopped, drop all capabilities, set
+`no-new-privileges`, use a read-only root with a `/tmp` tmpfs, and rotate logs.
+The cloudflared image is tag-pinned to `cloudflare/cloudflared:2026.11.2` (not
+digest-pinned). The cloudflared healthcheck uses the binary's `tunnel ready`
+command, which queries the local metrics `/ready` endpoint. The helper
+`tunnel-token-check` fails the `tunnel` profile with a clear message when
+`TUNNEL_TOKEN` is empty.
+
+#### Create a named tunnel (UNVERIFIED dashboard labels, may differ)
+
+The dashboard labels below could not be verified from this repository; they may
+differ in the current Cloudflare UI.
+
+1. Open the Cloudflare dashboard, then **Zero Trust** > **Networks** >
+   **Tunnels**.
+2. Create a tunnel and choose **Cloudflare** (remotely managed). Give it a name.
+3. Add a **Public hostname**. Pick the subdomain/domain, set the service type to
+   **HTTP**, and set the URL to `edge:80`. That is the internal Compose service
+   name and port; do not use `localhost`.
+4. Copy the tunnel token from the dashboard. Paste it into `TUNNEL_TOKEN` in
+   `.env.compose` (never commit that file and never paste the token into a
+   command line, issue, or chat).
+5. Optionally protect `/admin` with Cloudflare Access or WAF rules.
+6. Run `pnpm docker:stack:up:tunnel`. The stack builds the web image and starts
+   the tunnel.
+7. Set the public HTTPS origin in `.env.compose`:
+   `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_MEDIA_BASE_URL`, `NEXT_PUBLIC_API_URL`,
+   `MEDIA_PUBLIC_BASE_URL`, and `WEB_ORIGIN`. Rebuild web and restart the API as
+   described below.
+8. In Stripe, set the webhook URL to `https://<domain>/webhooks/stripe` and put
+   the signing secret in `STRIPE_WEBHOOK_SECRET`.
+
+A locally-managed tunnel with a credentials file is not used here; this Compose
+service runs a remotely-managed token tunnel.
+
+#### Trust model and real visitor IP
+
+This is safe only because the edge port is bound to `127.0.0.1` and the tunnel
+is the only ingress. Caddy trusts only private/loopback peers: `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.1/8`, `fd00::/8`, and `::1`. In this
+stack those are the cloudflared container and the local Docker gateway that the
+published loopback port uses. For a trusted peer Caddy reads the visitor IP from
+`CF-Connecting-IP` first and `X-Forwarded-For` second (right-to-left,
+`trusted_proxies_strict`). It then overwrites `X-Forwarded-For` and `X-Real-IP`
+with that single client IP, sets `X-Forwarded-Proto` to the original `https` or
+`http` scheme, and removes client-supplied `CF-Connecting-IP`, `CF-Visitor`,
+`X-Visitor-IP`, `X-Storefront-Key`, `X-Admin-Session`, and `Forwarded` before
+forwarding to web or API.
+
+`requestGuards.getVisitorIp()` reads `x-forwarded-for` first (now the validated
+single client IP) and falls back to `x-real-ip`; the API talks to the web app
+with the shared `STOREFRONT_API_KEY` and the `x-visitor-ip` header, and its
+public rate limiter keys on that value only when the key matches. The web server
+never reads a visitor IP from a client-supplied `x-visitor-ip`, and the API is
+not published.
+
+The scheme headers are read for every request because the edge is loopback-only.
+If the edge were ever exposed directly, or reached through another untrusted
+proxy, a client could spoof `CF-Connecting-IP` and the scheme headers. Never
+publish the edge listener on a public interface.
+
+#### HTTPS values, rebuilds, and cookies
+
+`NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_MEDIA_BASE_URL`, and
+`NEXT_PUBLIC_API_URL` are build arguments baked into the web image; changing the
+public domain requires rebuilding the web image. `MEDIA_PUBLIC_BASE_URL` (API
+product media URLs) and `WEB_ORIGIN` (API CORS) are runtime values, so restart
+the API after changing them. The `docker:stack:up*` scripts build first, and
+they warn when a tunnel profile is active while these public origins still point
+at localhost, are unset, or are not HTTPS.
+
+The admin `zf_admin_session` and customer `zf_session` cookies are always
+`HttpOnly`, `SameSite=Lax`, and `Path=/`. They add `Secure` only when
+`NODE_ENV=production`. That is correct for a real tunnel deployment: set
+`NODE_ENV=production` and the browser sends the cookies only over HTTPS. Local
+`http://localhost` development uses `NODE_ENV=development`, so the cookies are
+usable without TLS. The flag is not derived from `X-Forwarded-Proto`; using
+`NODE_ENV=development` behind the tunnel is for local testing only and does not
+mark cookies Secure.
+
+The admin BFF same-origin guard compares the request `Origin` (and
+`Sec-Fetch-Site`) with `NEXT_PUBLIC_SITE_URL`, or with the request URL when it is
+unset. With a tunnel, set it to the public `https://<domain>` origin and rebuild
+web. A quick tunnel's random hostname is not known at build time, so admin login
+through a quick tunnel needs a web rebuild with that origin; use a named tunnel
+for normal operation.
+
+#### Conservative HSTS
+
+Caddy sends `Strict-Transport-Security` only when the original request was HTTPS
+(`CF-Visitor` or `X-Forwarded-Proto`). The default is:
+
+```text
+Strict-Transport-Security: max-age=300
+```
+
+There is no `includeSubDomains` and no `preload` in the first rollout. After the
+HTTPS site is verified, raise `HSTS_MAX_AGE` in `.env.compose` in steps: `86400`
+(1 day), then `2592000` (30 days), then `15552000` (180 days). Restart the edge
+after changing it. Do not add `includeSubDomains` or `preload` until every
+subdomain is HTTPS-only.
+
+#### VPS notes (unverified)
+
+cloudflared connects outbound to Cloudflare. A VPS with only IPv6 outbound may
+need `TUNNEL_EDGE_IP_VERSION=auto` or `6` in `.env.compose`, and outbound
+TCP/UDP 7844 must be allowed. This was not tested on an IPv6-only VPS.
 
 ### Build-time vs runtime for the web image
 
@@ -235,13 +371,15 @@ HSTS behavior.
 ### Stop, reset, logs
 
 ```powershell
-pnpm docker:stack:down       # stop containers, keep zayn_pgdata and zayn_media
+pnpm docker:stack:down       # stop containers (including tunnel profiles), keep volumes
 pnpm docker:stack:logs       # follow logs
 pnpm docker:stack:reset -- --yes  # remove containers and volumes
 ```
 
-`docker:stack:reset` refuses to remove volumes without `--yes`. The project name
-is `zayn`, so the named volumes are `zayn_pgdata` and `zayn_media`.
+`docker:stack:down` and `docker:stack:reset` pass both tunnel profiles, so
+named and quick tunnel containers are removed too. `docker:stack:reset` refuses
+to remove volumes without `--yes`. The project name is `zayn`, so the named
+volumes are `zayn_pgdata` and `zayn_media`.
 
 ### What is exposed
 
@@ -250,8 +388,13 @@ is `zayn`, so the named volumes are `zayn_pgdata` and `zayn_media`.
 - Through the edge: `/media/*` and `/webhooks/stripe` go to the API. The API's
   public, admin, health, and order routes are not directly published; for
   example `/api/public/categories` at the edge returns the web 404 page.
-- The edge passes the original `Host` and adds `X-Forwarded-For`,
-  `X-Forwarded-Proto`, and `X-Forwarded-Host`.
+- The edge passes the original `Host`, sets `X-Forwarded-For` and `X-Real-IP`
+  to the single validated visitor IP, sets `X-Forwarded-Proto` to the original
+  scheme, and strips client-supplied `CF-Connecting-IP`, `CF-Visitor`,
+  `X-Visitor-IP`, `X-Storefront-Key`, `X-Admin-Session`, and `Forwarded`. See
+  "Trust model and real visitor IP" above.
+- The tunnel services publish no ports. Only the edge is bound to the host, on
+  `127.0.0.1`.
 
 ### Smoke test
 
@@ -263,26 +406,19 @@ The smoke test uses the `zayn-smoke` Compose project, a temp env file in the OS
 temp folder, and port `18080`. It builds the stack images, tests the edge,
 migrations, owner creation, real code login, admin product and image upload,
 media serving, foreign-origin rejection, deletion cleanup, API restart
-persistence, and non-root operation. It removes all of its containers,
+persistence, and non-root operation. It also simulates the tunnel from the host
+with `CF-Connecting-IP` / `X-Forwarded-Proto`, checks that Caddy trusts only the
+Docker gateway peer and derives the visitor IP from `CF-Connecting-IP` (not
+client-supplied `X-Forwarded-For`), checks the per-IP rate limiter buckets,
+checks conservative HSTS only on HTTPS, checks that forged admin/storefront
+headers do not authenticate, and checks that the tunnel services stay behind
+profiles and both profile configs validate. It removes all of its containers,
 networks, volumes, and the temp env file even on failure, and never touches the
 developer's `zayn-furnishings-postgres-dev` container or the real `.env.compose`.
 
-### Phase 10 limitations
-
-- No TLS: the edge listens on plain HTTP at `:80`. Phase 10 must add
-  Cloudflare Tunnel/HTTPS, HSTS, and secure-cookie behavior.
-- Visitor IP: Caddy's `X-Forwarded-For` is the direct peer. Behind Cloudflare,
-  Caddy must use trusted proxies or Cloudflare's real-IP header before the app
-  can see the real client IP.
-- Stripe webhook URL: Phase 10 must set the public HTTPS webhook endpoint and
-  matching signing secret.
-- Same-origin checks: `NEXT_PUBLIC_SITE_URL` must equal the final public web
-  origin used by the admin BFF, and Caddy must preserve the original Host.
-- Images behind Cloudflare: set `NEXT_PUBLIC_MEDIA_BASE_URL` and the API's
-  `MEDIA_PUBLIC_BASE_URL` to the public HTTPS edge origin. Media URLs become
-  relative and the optimizer fetches them through the internal Next rewrite to
-  `API_INTERNAL_URL`; do not enable `dangerouslyAllowLocalIP` in production.
-  Caddy continues to serve `/media/*` directly for browser requests.
+The optional live quick-tunnel check is not part of the offline smoke test; run
+`pnpm docker:stack:up:quick` on a machine with internet access when a live
+Cloudflare round trip is needed.
 
 ## Logs
 
@@ -290,7 +426,9 @@ developer's `zayn-furnishings-postgres-dev` container or the real `.env.compose`
 docker logs -f <container-name>
 ```
 
-The API and web healthchecks use Node `fetch`; no `curl` is installed.
+The API and web healthchecks use Node `fetch`. The edge healthcheck uses the
+`curl` binary bundled in the Caddy image, and the cloudflared healthcheck uses
+its own `cloudflared tunnel ready` command.
 
 ## Remove the images
 
