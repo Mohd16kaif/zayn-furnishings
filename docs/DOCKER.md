@@ -167,8 +167,37 @@ edge port:
 All services share one user-defined Compose network, so `api`, `web`,
 `postgres`, and `edge` resolve by service name. `STOREFRONT_API_KEY` must be the
 same value for `api` and `web`; the example env file has one variable that feeds
-both. API and web use `read_only` root filesystems with small tmpfs mounts for
-`/tmp` (and the web `.next/cache`); media writes go to the `media` volume.
+both. API and web use `read_only` root filesystems; media writes go to the
+`media` volume.
+
+### Web runtime caches and the read-only root
+
+Next writes regenerated prerenders and optimized images at runtime, so the web
+container gets three tmpfs mounts while keeping `read_only: true`:
+
+| Mount | Owner / mode | Size | Purpose |
+| --- | --- | --- | --- |
+| `/tmp` | default tmpfs | default | Temporary files |
+| `/app/apps/web/.next/cache` | `1001:1001`, `0700` | 128 MB | `next/image` optimizer cache |
+| `/app/apps/web/.next/server/route-cache` | `1001:1001`, `0700` | 128 MB | Cache Components regenerated page/prerender output |
+
+These are caches. It is safe to lose them on restart: the container starts with
+an empty route cache and empty image cache, pages regenerate from the API and
+database on the next request, and images are optimized again on demand. Do not
+make the whole `.next` directory or the container root writable. The `web`
+service still runs as uid `1001` with `cap_drop: ALL` and
+`no-new-privileges`.
+
+To check for cache write failures after generating traffic:
+
+```powershell
+docker compose -f docker-compose.stack.yml --env-file .env.compose logs web |
+  Select-String "Failed to update prerender cache|EROFS|ENOENT|EACCES"
+```
+
+A clean result prints nothing. The smoke test also asserts that the web logs
+stay clean, that the tmpfs mounts are owned by uid/gid `1001`, and that the web
+root remains read-only.
 
 ### How images are served in the stack
 
@@ -412,7 +441,17 @@ Docker gateway peer and derives the visitor IP from `CF-Connecting-IP` (not
 client-supplied `X-Forwarded-For`), checks the per-IP rate limiter buckets,
 checks conservative HSTS only on HTTPS, checks that forged admin/storefront
 headers do not authenticate, and checks that the tunnel services stay behind
-profiles and both profile configs validate. It removes all of its containers,
+profiles and both profile configs validate.
+
+It also verifies the read-only web runtime: the tmpfs ownership and size, a real
+admin product PATCH followed by the admin content UI's `revalidateStorefront`
+server action, the new name and price becoming visible on the product and
+category pages within 15 seconds, the same values persisting across a web
+restart, and zero `Failed to update prerender cache` / `EROFS` / `ENOENT` /
+`EACCES` lines in the web logs. The Caddy access-log check sends a fake
+User-Agent, Cookie, Referer, and query string and asserts that none of them
+appear, that all headers are absent, that the path-only `uri` is logged, and
+that loopback healthchecks are skipped. The smoke removes all of its containers,
 networks, volumes, and the temp env file even on failure, and never touches the
 developer's `zayn-furnishings-postgres-dev` container or the real `.env.compose`.
 
@@ -429,6 +468,28 @@ docker logs -f <container-name>
 The API and web healthchecks use Node `fetch`. The edge healthcheck uses the
 `curl` binary bundled in the Caddy image, and the cloudflared healthcheck uses
 its own `cloudflared tunnel ready` command.
+
+### Caddy access logs
+
+Caddy logs one compact JSON line per external request to stdout, with only:
+timestamp, level, message, method, host, path-only `uri` (no query string),
+protocol, status, duration, size, remote IP, and client IP. The `logger` field
+is added by Caddy's logging core and cannot be filtered. All request and
+response headers are dropped, so User-Agent, Cloudflare headers, Cookie,
+Set-Cookie, Referer, and Authorization never appear. Caddy's own loopback
+healthcheck requests are skipped with `log_skip`.
+
+Visitor IPs are personal data. Retention is the Docker `json-file` log rotation
+configured on the services (`3` files of `10` MB each). The privacy policy must
+mention that IP addresses are logged for security and rate limiting and are
+retained on that rotation.
+
+## Known small items
+
+- `/favicon.ico` currently returns 404 because the project has no favicon yet.
+- A quick tunnel URL cannot be used for a manual admin login test because
+  `NEXT_PUBLIC_SITE_URL` is baked into the web image at build time. Rebuild web
+  with the quick URL, or use a named tunnel with a stable public origin.
 
 ## Remove the images
 

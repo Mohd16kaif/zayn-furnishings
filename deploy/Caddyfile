@@ -70,27 +70,28 @@
 	# Conservative first-rollout HSTS. Env default is 300 seconds.
 	header @https Strict-Transport-Security "max-age={$HSTS_MAX_AGE:300}"
 
-	# Access logs go to stdout. Cookies are removed, and common code/token query
-	# keys are removed so login codes, session tokens, and other sensitive query
-	# values never appear in logs. Admin codes travel in POST bodies.
+	# Access logs go to stdout in a compact, non-sensitive shape. Every request
+	# and response header is dropped (no User-Agent, Cloudflare headers, Cookie,
+	# or Referer), the query string is dropped, and only the path is appended as
+	# `uri`. Caddy's own loopback healthcheck is skipped. Visitor IPs are
+	# personal data; retention is the Docker json-file rotation (3 x 10 MB).
+	@health remote_ip 127.0.0.1 ::1
+	log_skip @health
 	log {
 		output stdout
 		format filter {
 			wrap json
 			fields {
-				request>headers>Cookie delete
-				request>uri query {
-					delete code
-					delete token
-					delete session
-					delete session_token
-					delete otp
-					delete access_token
-					delete refresh_token
-				}
+				request>headers delete
+				resp_headers delete
+				request>remote_port delete
+				request>uri delete
+				bytes_read delete
+				user_id delete
 			}
 		}
 	}
+	log_append uri {http.request.uri.path}
 
 	# Caddy passes the original Host and sets X-Forwarded-Host by default.
 	handle /media/* {

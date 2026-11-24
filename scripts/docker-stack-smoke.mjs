@@ -6,6 +6,10 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { runStackImageChecks } from "./check-stack-images.mjs";
 import {
+  formatCents,
+  runStackRevalidationChecks,
+} from "./check-stack-revalidation.mjs";
+import {
   createComposeEnvValues,
   randomAlphanumeric,
   writeComposeEnvFile,
@@ -228,6 +232,26 @@ async function waitForCaddyAccessLog(containerId, marker) {
   }, "Caddy access log entry for the tunnel probe", 15_000);
 }
 
+function webLogSummary(containerId) {
+  const result = docker(["logs", containerId], {
+    allowFailure: true,
+  });
+  const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const errors = [
+    ...new Set(
+      lines.filter((line) =>
+        /Failed to update prerender cache|EROFS|ENOENT|EACCES/.test(line),
+      ),
+    ),
+  ];
+
+  return {
+    lines: lines.length,
+    errors,
+  };
+}
+
 async function main() {
   envDir = await mkdtemp(path.join(tmpdir(), "zayn-stack-smoke-"));
   envPath = path.join(envDir, ".env");
@@ -394,6 +418,82 @@ async function main() {
     "Caddy uses CF-Connecting-IP instead of client-supplied X-Forwarded-For",
     probeRequest.client_ip === "203.0.113.99",
     `client=${probeRequest.client_ip ?? "missing"}`,
+  );
+
+  const logMarker = `/__log_probe_${suffix}`;
+  const fakeUserAgent = `smoke-ua-${suffix}`;
+  const fakeCookieName = `smoke_cookie_${suffix}`;
+  const fakeCookieValue = `smoke_cookie_value_${suffix}`;
+  const fakeQueryValue = `smoke_query_${suffix}`;
+  const logProbeResponse = await fetchTimeout(
+    `${EDGE}${logMarker}?token=${fakeQueryValue}&code=999999`,
+    {
+      headers: {
+        "user-agent": fakeUserAgent,
+        cookie: `${fakeCookieName}=${fakeCookieValue}`,
+        referer: `https://referer-${suffix}.example/private`,
+        "cf-connecting-ip": "203.0.113.51",
+      },
+    },
+  );
+  check(
+    "Caddy log probe reaches the edge",
+    logProbeResponse.status === 404,
+    `HTTP ${logProbeResponse.status}`,
+  );
+  const logProbe = await waitForCaddyAccessLog(caddyContainer, logMarker);
+  const logProbeRequest = logProbe.request ?? {};
+  const serializedLogProbe = JSON.stringify(logProbe);
+  check(
+    "Caddy access log keeps the compact request fields",
+    logProbe.uri === logMarker &&
+      logProbeRequest.method === "GET" &&
+      logProbeRequest.proto === "HTTP/1.1" &&
+      typeof logProbeRequest.host === "string" &&
+      logProbeRequest.remote_ip === gateway &&
+      logProbeRequest.client_ip === "203.0.113.51" &&
+      logProbe.status === 404 &&
+      typeof logProbe.duration === "number" &&
+      typeof logProbe.size === "number" &&
+      typeof logProbe.ts === "number" &&
+      logProbe.level === "info" &&
+      logProbe.msg === "handled request",
+    `uri=${logProbe.uri ?? "missing"}, status=${logProbe.status ?? "missing"}`,
+  );
+  check(
+    "Caddy access log drops headers, query strings, and remote port",
+    !("headers" in logProbeRequest) &&
+      !("uri" in logProbeRequest) &&
+      !("remote_port" in logProbeRequest) &&
+      !("resp_headers" in logProbe) &&
+      !("bytes_read" in logProbe) &&
+      !("user_id" in logProbe) &&
+      !serializedLogProbe.includes(fakeUserAgent) &&
+      !serializedLogProbe.includes(fakeCookieValue) &&
+      !serializedLogProbe.includes(fakeQueryValue) &&
+      !serializedLogProbe.includes("referer-"),
+    "headers, query, User-Agent, Cookie, and Referer absent",
+  );
+
+  const caddyLogResult = docker(["logs", caddyContainer], {
+    allowFailure: true,
+  });
+  const caddyLogText = `${caddyLogResult.stdout ?? ""}\n${caddyLogResult.stderr ?? ""}`;
+  const accessLogLines = caddyLogText
+    .split(/\r?\n/)
+    .filter((line) => line.includes('"logger":"http.log.access'));
+  const loopbackAccessLines = accessLogLines.filter((line) => {
+    try {
+      const parsed = JSON.parse(line);
+      return ["127.0.0.1", "::1"].includes(parsed.request?.remote_ip);
+    } catch {
+      return false;
+    }
+  });
+  check(
+    "Caddy access log skips loopback healthchecks",
+    loopbackAccessLines.length === 0,
+    `${accessLogLines.length} access lines, ${loopbackAccessLines.length} loopback lines`,
   );
 
   const secureSimulationHeaders = {
@@ -590,6 +690,54 @@ async function main() {
     webUid !== "0" && webUid !== "root",
     `uid=${webUid}`,
   );
+
+  const webReadOnly = inspect(
+    "{{.HostConfig.ReadonlyRootfs}}",
+    webContainer,
+  );
+  check(
+    "Web root filesystem is read-only",
+    webReadOnly === "true",
+    webReadOnly,
+  );
+
+  const webTmpfs = JSON.parse(
+    inspect("{{json .HostConfig.Tmpfs}}", webContainer) || "{}",
+  );
+  for (const mountPath of [
+    "/app/apps/web/.next/cache",
+    "/app/apps/web/.next/server/route-cache",
+  ]) {
+    const options = webTmpfs[mountPath] ?? "";
+    check(
+      `Web tmpfs ${mountPath} is owned by uid/gid 1001 with a size limit`,
+      options.includes("uid=1001") &&
+        options.includes("gid=1001") &&
+        options.includes("mode=0700") &&
+        options.includes("size=128m"),
+      options || "missing",
+    );
+  }
+
+  for (const mountPath of [
+    "/app/apps/web/.next/cache",
+    "/app/apps/web/.next/server/route-cache",
+  ]) {
+    const stat = docker([
+      "exec",
+      webContainer,
+      "stat",
+      "-c",
+      "%u:%g %a",
+      mountPath,
+    ]).stdout.trim();
+    check(
+      `Web tmpfs ${mountPath} is writable only by the web user`,
+      stat === "1001:1001 700",
+      stat,
+    );
+  }
+
   check(
     "Migrate image user is non-root",
     migrateUser !== "0" && migrateUser !== "root" && migrateUser !== "",
@@ -775,6 +923,7 @@ async function main() {
     `HTTP ${imageResponse.status}, ${imageContentType}, nosniff=${imageNosniff || "missing"}`,
   );
 
+  const heroTitle = `Stack hero ${suffix}`;
   const heroResponse = await fetchTimeout(
     `${EDGE}/api/admin-proxy/admin/content`,
     {
@@ -786,7 +935,7 @@ async function main() {
       },
       body: JSON.stringify({
         type: "hero",
-        title: `Stack hero ${suffix}`,
+        title: heroTitle,
         is_active: false,
       }),
     },
@@ -869,6 +1018,97 @@ async function main() {
     productName,
   });
   check("Real-browser stack image checks pass", true);
+
+  const updatedProductName = `${productName} updated`;
+  const updatedPriceCents = 9876;
+  const updatedPriceLabel = formatCents(updatedPriceCents);
+  const updateProduct = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/products/${product.id}`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: JSON.stringify({
+        name: updatedProductName,
+        price_cents: updatedPriceCents,
+      }),
+    },
+  );
+  check(
+    "Product name and price update through the admin proxy",
+    updateProduct.status === 200,
+    `HTTP ${updateProduct.status}`,
+  );
+
+  const revalidation = await runStackRevalidationChecks({
+    baseUrl: EDGE,
+    adminCookie,
+    heroTitle,
+    productSlug: product.slug,
+    categorySlug: category.slug,
+    newName: updatedProductName,
+    newPriceCents: updatedPriceCents,
+    timeoutMs: 15_000,
+  });
+  check(
+    "Storefront product and category pages show the admin change within 15 seconds",
+    revalidation.ok,
+    `${revalidation.elapsedMs}ms, ${revalidation.priceLabel}`,
+  );
+
+  compose(["restart", "web"], { timeout: 120_000 });
+  await waitForHealthy(webContainer, "Web after restart");
+  check("Web health recovers after restart", true);
+
+  const productAfterRestart = await waitFor(async () => {
+    const response = await fetchTimeout(`${EDGE}/p/${product.slug}`);
+
+    if (response.status !== 200) {
+      return null;
+    }
+
+    const text = await response.text();
+
+    return text.includes(updatedProductName) &&
+      text.includes(updatedPriceLabel)
+      ? text
+      : null;
+  }, "updated product page after web restart", 20_000);
+  check(
+    "Product page still shows the updated name and price after web restart",
+    Boolean(productAfterRestart),
+    updatedPriceLabel,
+  );
+
+  const categoryAfterRestart = await waitFor(async () => {
+    const response = await fetchTimeout(`${EDGE}/c/${category.slug}`);
+
+    if (response.status !== 200) {
+      return null;
+    }
+
+    const text = await response.text();
+
+    return text.includes(updatedProductName) &&
+      text.includes(updatedPriceLabel)
+      ? text
+      : null;
+  }, "updated category page after web restart", 20_000);
+  check(
+    "Category page still shows the updated name and price after web restart",
+    Boolean(categoryAfterRestart),
+    updatedPriceLabel,
+  );
+
+  const webLogs = webLogSummary(webContainer);
+  check(
+    "Web logs contain no prerender cache write errors",
+    webLogs.errors.length === 0,
+    `${webLogs.lines} lines checked, ${webLogs.errors.length} write errors`,
+  );
 
   const foreignOrigin = await fetchTimeout(
     `${EDGE}/api/admin-proxy/admin/products`,

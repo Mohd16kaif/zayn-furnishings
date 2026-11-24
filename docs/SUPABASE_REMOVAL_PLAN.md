@@ -1066,6 +1066,21 @@ real inbox (or the development log-only email sender).
   the unverified dashboard labels, the `http://edge:80` service mapping, the
   `https://<domain>/webhooks/stripe` webhook, rebuild steps, HSTS rollout, the
   IPv6-only VPS note (unverified), and the trust model.
+- Fixed web prerender cache write failures under the read-only root. Next writes
+  at runtime under `.next/server/route-cache` and `.next/cache`; both are now
+  tmpfs mounts owned by uid/gid `1001`, mode `0700`, 128 MB each. The root and
+  `.next` stay read-only, and the caches are safe to lose on restart because
+  pages and images regenerate. The smoke test loads real pages, changes a
+  product through the admin proxy, invokes the real `revalidateStorefront`
+  server action through the admin content UI, asserts the new name and price on
+  the product and category pages within 15 seconds, restarts web, asserts the
+  pages still render the changed values, and asserts the web logs contain zero
+  `Failed to update prerender cache` / `EROFS` / `ENOENT` / `EACCES` lines.
+- Trimmed the Caddy access log to timestamp, level, message, method, host,
+  path-only `uri`, protocol, status, duration, size, remote IP, and client IP.
+  All request and response headers and the query string are dropped, loopback
+  healthchecks are skipped, and docs note that visitor IPs are personal data
+  retained by the Docker 3 x 10 MB log rotation.
 - Tests: `pnpm docker:stack:smoke` asserts the Docker gateway peer is private,
   Caddy derives the visitor IP from `CF-Connecting-IP` (a client-supplied
   `X-Forwarded-For`/`X-Real-IP`/`x-visitor-ip` does not change it), separate
@@ -1073,8 +1088,11 @@ real inbox (or the development log-only email sender).
   `x-admin-session`/`x-storefront-key` headers do not authenticate, HSTS is
   present only on simulated HTTPS with `max-age=300`, the edge is still the only
   published port on `127.0.0.1`, and both tunnel profiles validate while staying
-  out of the default service list. The optional live quick-tunnel round trip is
-  not part of the offline smoke test.
+  out of the default service list. It also validates the tmpfs ownership/mode,
+  the headless-browser content revalidation flow and web-restart persistence,
+  the clean web logs, and the compact access log with no leaked fake
+  User-Agent/Cookie/Referer/query or loopback healthcheck lines. The optional
+  live quick-tunnel round trip is not part of the offline smoke test.
 
 
 ### Phase 11 - Backups and restore drill

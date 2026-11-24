@@ -105,7 +105,11 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /app/apps/web/.next/cache
+      # Next runtime caches. They are safe to lose on restart: pages
+      # regenerate from the API/DB and images are optimized again on demand.
+      # route-cache is where Cache Components writes regenerated prerenders.
+      - "/app/apps/web/.next/cache:uid=1001,gid=1001,mode=0700,size=128m"
+      - "/app/apps/web/.next/server/route-cache:uid=1001,gid=1001,mode=0700,size=128m"
     logging: *logging
     networks:
       - stack
