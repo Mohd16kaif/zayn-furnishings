@@ -16,9 +16,19 @@ function issuePaths(result: {
 }
 
 const ADMIN_SECRET = "a".repeat(32);
+const MEDIA_DIR = path.resolve("media-data");
+const MEDIA_BASE_URL = "https://api.example.com";
+const PRODUCTION_CORE = {
+  ADMIN_AUTH_SECRET: ADMIN_SECRET,
+  DATABASE_URL: "postgres://user:pass@localhost:5432/store",
+  MEDIA_DIR,
+  MEDIA_PUBLIC_BASE_URL: MEDIA_BASE_URL,
+  STRIPE_SECRET_KEY: "sk_test_example",
+  STRIPE_WEBHOOK_SECRET: "whsec_example",
+};
 
-describe("media env validation", () => {
-  it("defaults to the Supabase driver and 500 MB free-space guard", () => {
+describe("core env validation", () => {
+  it("defaults the media free-space guard in development", () => {
     const result = envSchema.safeParse({
       NODE_ENV: "development",
       APP_ENV: "development",
@@ -27,27 +37,57 @@ describe("media env validation", () => {
     expect(result.success).toBe(true);
 
     if (result.success) {
-      expect(result.data.MEDIA_DRIVER).toBe("supabase");
       expect(result.data.MEDIA_MIN_FREE_MB).toBe(500);
     }
   });
 
-  it("allows the local driver in development without MEDIA_DIR or base URL", () => {
+  it("allows development without media location settings", () => {
     const result = envSchema.safeParse({
       NODE_ENV: "development",
       APP_ENV: "development",
-      MEDIA_DRIVER: "local",
     });
 
     expect(result.success).toBe(true);
   });
 
-  it("requires MEDIA_DIR and MEDIA_PUBLIC_BASE_URL for local in staging", () => {
+  it("parses staging with only the core service settings", () => {
     const result = envSchema.safeParse({
       NODE_ENV: "development",
       APP_ENV: "staging",
       ADMIN_AUTH_SECRET: ADMIN_SECRET,
-      MEDIA_DRIVER: "local",
+      MEDIA_DIR,
+      MEDIA_PUBLIC_BASE_URL: MEDIA_BASE_URL,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("parses production with only the core service settings", () => {
+    const result = envSchema.safeParse({
+      NODE_ENV: "production",
+      APP_ENV: "production",
+      ...PRODUCTION_CORE,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("ignores unused legacy variables instead of rejecting startup", () => {
+    const result = envSchema.safeParse({
+      NODE_ENV: "development",
+      APP_ENV: "development",
+      UNUSED_LEGACY_URL: "https://old.example.com",
+      UNUSED_LEGACY_KEY: "unused",
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("requires media settings in staging", () => {
+    const result = envSchema.safeParse({
+      NODE_ENV: "development",
+      APP_ENV: "staging",
+      ADMIN_AUTH_SECRET: ADMIN_SECRET,
     });
 
     expect(result.success).toBe(false);
@@ -59,12 +99,14 @@ describe("media env validation", () => {
     );
   });
 
-  it("requires MEDIA_DIR and MEDIA_PUBLIC_BASE_URL for local in production", () => {
+  it("requires media settings in production", () => {
     const result = envSchema.safeParse({
-      NODE_ENV: "development",
+      NODE_ENV: "production",
       APP_ENV: "production",
       ADMIN_AUTH_SECRET: ADMIN_SECRET,
-      MEDIA_DRIVER: "local",
+      DATABASE_URL: PRODUCTION_CORE.DATABASE_URL,
+      STRIPE_SECRET_KEY: PRODUCTION_CORE.STRIPE_SECRET_KEY,
+      STRIPE_WEBHOOK_SECRET: PRODUCTION_CORE.STRIPE_WEBHOOK_SECRET,
     });
 
     expect(result.success).toBe(false);
@@ -74,26 +116,12 @@ describe("media env validation", () => {
         "MEDIA_PUBLIC_BASE_URL",
       ]),
     );
-  });
-
-  it("accepts local in staging with an absolute dir and base URL", () => {
-    const result = envSchema.safeParse({
-      NODE_ENV: "development",
-      APP_ENV: "staging",
-      ADMIN_AUTH_SECRET: ADMIN_SECRET,
-      MEDIA_DRIVER: "local",
-      MEDIA_DIR: path.resolve("media-data"),
-      MEDIA_PUBLIC_BASE_URL: "https://api.example.com",
-    });
-
-    expect(result.success).toBe(true);
   });
 
   it("rejects a relative MEDIA_DIR", () => {
     const result = envSchema.safeParse({
       NODE_ENV: "development",
       APP_ENV: "development",
-      MEDIA_DRIVER: "local",
       MEDIA_DIR: "media-data",
     });
 
@@ -105,7 +133,6 @@ describe("media env validation", () => {
     const result = envSchema.safeParse({
       NODE_ENV: "development",
       APP_ENV: "development",
-      MEDIA_DRIVER: "local",
       MEDIA_PUBLIC_BASE_URL: "ftp://example.com",
     });
 
@@ -122,19 +149,5 @@ describe("media env validation", () => {
 
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContain("MEDIA_MIN_FREE_MB");
-  });
-
-  it("treats an empty MEDIA_DRIVER as the default", () => {
-    const result = envSchema.safeParse({
-      NODE_ENV: "development",
-      APP_ENV: "development",
-      MEDIA_DRIVER: "",
-    });
-
-    expect(result.success).toBe(true);
-
-    if (result.success) {
-      expect(result.data.MEDIA_DRIVER).toBe("supabase");
-    }
   });
 });

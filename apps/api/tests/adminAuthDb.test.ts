@@ -121,14 +121,6 @@ beforeAll(() => {
     return;
   }
 
-  const url = new URL(TEST_DATABASE_URL);
-
-  if (url.hostname.toLowerCase().includes("supabase")) {
-    throw new Error(
-      "Refusing to run admin auth integration tests against Supabase.",
-    );
-  }
-
   client = postgres(TEST_DATABASE_URL, {
     max: 10,
     prepare: false,

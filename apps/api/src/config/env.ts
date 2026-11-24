@@ -29,9 +29,7 @@ if (stripeKeyError) {
 export const adminAuthSecretIsDevFallback =
   !parsed.data.ADMIN_AUTH_SECRET;
 
-const usesLocalMedia = parsed.data.MEDIA_DRIVER === "local";
-const developmentMediaDefaults =
-  usesLocalMedia && appEnv === "development";
+const developmentMediaDefaults = appEnv === "development";
 const defaultMediaDir = developmentMediaDefaults
   ? path.resolve(process.cwd(), "media-data")
   : undefined;
@@ -39,13 +37,26 @@ const defaultMediaPublicBaseUrl = developmentMediaDefaults
   ? "http://localhost:4000"
   : undefined;
 
+const mediaDir = parsed.data.MEDIA_DIR ?? defaultMediaDir;
+const mediaPublicBaseUrl =
+  parsed.data.MEDIA_PUBLIC_BASE_URL ?? defaultMediaPublicBaseUrl;
+
+if (!mediaDir) {
+  console.error("MEDIA_DIR is required.");
+  process.exit(1);
+}
+
+if (!mediaPublicBaseUrl) {
+  console.error("MEDIA_PUBLIC_BASE_URL is required.");
+  process.exit(1);
+}
+
 export const env = {
   ...parsed.data,
   APP_ENV: appEnv,
   ADMIN_AUTH_SECRET:
     parsed.data.ADMIN_AUTH_SECRET ?? DEV_ADMIN_AUTH_SECRET,
-  MEDIA_DIR: parsed.data.MEDIA_DIR ?? defaultMediaDir,
-  MEDIA_PUBLIC_BASE_URL:
-    parsed.data.MEDIA_PUBLIC_BASE_URL ?? defaultMediaPublicBaseUrl,
+  MEDIA_DIR: mediaDir,
+  MEDIA_PUBLIC_BASE_URL: mediaPublicBaseUrl,
 };
 export type Env = typeof env;

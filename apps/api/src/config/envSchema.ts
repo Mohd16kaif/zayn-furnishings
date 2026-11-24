@@ -40,17 +40,6 @@ export const envSchema = z
         message: "ADMIN_AUTH_SECRET must be at least 32 characters",
       },
     ),
-    MEDIA_DRIVER: z.preprocess(
-      (value) => {
-        if (typeof value !== "string") {
-          return value;
-        }
-
-        const trimmed = value.trim().toLowerCase();
-        return trimmed === "" ? undefined : trimmed;
-      },
-      z.enum(["supabase", "local"]).default("supabase"),
-    ),
     MEDIA_DIR: optionalString.refine(
       (value) => value === undefined || path.isAbsolute(value),
       {
@@ -85,9 +74,6 @@ export const envSchema = z
       },
       z.number().int().positive().default(500),
     ),
-    SUPABASE_URL: optionalString,
-    SUPABASE_SERVICE_ROLE_KEY: optionalString,
-    SUPABASE_ANON_KEY: optionalString,
     OWNER_EMAIL: optionalString,
     WEB_ORIGIN: z.string().default("http://localhost:3000"),
     STOREFRONT_API_KEY: optionalString,
@@ -111,27 +97,21 @@ export const envSchema = z
       });
     }
 
-    if (value.MEDIA_DRIVER === "local") {
-      if (appEnv !== "development" && !value.MEDIA_DIR) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["MEDIA_DIR"],
-          message:
-            "MEDIA_DIR is required for the local media driver in staging and production",
-        });
-      }
+    if (appEnv !== "development" && !value.MEDIA_DIR) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MEDIA_DIR"],
+        message: "MEDIA_DIR is required in staging and production",
+      });
+    }
 
-      if (
-        appEnv !== "development" &&
-        !value.MEDIA_PUBLIC_BASE_URL
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["MEDIA_PUBLIC_BASE_URL"],
-          message:
-            "MEDIA_PUBLIC_BASE_URL is required for the local media driver in staging and production",
-        });
-      }
+    if (appEnv !== "development" && !value.MEDIA_PUBLIC_BASE_URL) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MEDIA_PUBLIC_BASE_URL"],
+        message:
+          "MEDIA_PUBLIC_BASE_URL is required in staging and production",
+      });
     }
 
     if (value.NODE_ENV !== "production") {
@@ -143,14 +123,6 @@ export const envSchema = z
         code: "custom",
         path: ["DATABASE_URL"],
         message: "DATABASE_URL is required in production",
-      });
-    }
-
-    if (!value.SUPABASE_SERVICE_ROLE_KEY) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["SUPABASE_SERVICE_ROLE_KEY"],
-        message: "SUPABASE_SERVICE_ROLE_KEY is required in production",
       });
     }
 

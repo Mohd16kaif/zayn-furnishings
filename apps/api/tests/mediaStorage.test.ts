@@ -22,6 +22,7 @@ import {
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const IMAGE_ID = "22222222-2222-4222-8222-222222222222";
+const IMAGE_ID_2 = "33333333-3333-4333-8333-333333333333";
 const RELATIVE_PATH = `products/${OWNER_ID}/${IMAGE_ID}.webp`;
 const PUBLIC_BASE = "https://api.example.com/";
 
@@ -109,8 +110,66 @@ describe("local media storage", () => {
     await storage.remove([RELATIVE_PATH]);
     await expect(stat(target)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(
+      stat(path.join(tempDir, "products", OWNER_ID)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      (await stat(path.join(tempDir, "products"))).isDirectory(),
+    ).toBe(true);
+    await expect(
       storage.remove([RELATIVE_PATH]),
     ).resolves.toBeUndefined();
+  });
+
+  it("keeps an owner folder that still contains another file", async () => {
+    const storage = localStorage();
+    const secondPath = `products/${OWNER_ID}/${IMAGE_ID_2}.webp`;
+
+    await storage.put(RELATIVE_PATH, Buffer.from("first"), "image/webp");
+    await storage.put(secondPath, Buffer.from("second"), "image/webp");
+
+    await storage.remove([RELATIVE_PATH]);
+
+    expect(
+      (
+        await stat(
+          path.join(tempDir, "products", OWNER_ID, `${IMAGE_ID_2}.webp`),
+        )
+      ).isFile(),
+    ).toBe(true);
+    expect(
+      (await stat(path.join(tempDir, "products", OWNER_ID))).isDirectory(),
+    ).toBe(true);
+    expect(
+      (await stat(path.join(tempDir, "products"))).isDirectory(),
+    ).toBe(true);
+  });
+
+  it("removes only empty owner folders and never top folders", async () => {
+    const storage = localStorage();
+    const emptyOwnerPath = path.join(tempDir, "content", OWNER_ID);
+
+    await mkdir(emptyOwnerPath, { recursive: true });
+    await storage.put(RELATIVE_PATH, Buffer.from("kept"), "image/webp");
+
+    await storage.removeEmptyDirectories([
+      `content/${OWNER_ID}`,
+      `products/${OWNER_ID}`,
+      "products",
+      "content",
+    ]);
+
+    await expect(stat(emptyOwnerPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(
+      (await stat(path.join(tempDir, "products", OWNER_ID))).isDirectory(),
+    ).toBe(true);
+    expect(
+      (await stat(path.join(tempDir, "products"))).isDirectory(),
+    ).toBe(true);
+    expect(
+      (await stat(path.join(tempDir, "content"))).isDirectory(),
+    ).toBe(true);
   });
 
   it("rejects a non-WebP content type for local writes", async () => {
@@ -247,33 +306,22 @@ describe("local media storage", () => {
 });
 
 describe("media storage factory", () => {
-  it("selects Supabase by default config", () => {
-    expect(createMediaStorage({ driver: "supabase" }).driver).toBe(
-      "supabase",
-    );
-  });
-
-  it("requires a directory and base URL for local", () => {
-    expect(() => createMediaStorage({ driver: "local" })).toThrow(
-      MediaStorageError,
-    );
+  it("requires a directory and base URL", () => {
+    expect(() => createMediaStorage({})).toThrow(MediaStorageError);
     expect(() =>
       createMediaStorage({
-        driver: "local",
         mediaDir: tempDir,
       }),
     ).toThrow(MediaStorageError);
   });
 
-  it("creates a local driver for an absolute directory", () => {
+  it("creates local storage for an absolute directory", () => {
     const storage = createMediaStorage({
-      driver: "local",
       mediaDir: tempDir,
       publicBaseUrl: "http://localhost:4000",
       minFreeMb: 0,
     });
 
-    expect(storage.driver).toBe("local");
     expect(storage).toBeInstanceOf(LocalMediaStorage);
   });
 });

@@ -112,7 +112,6 @@ vi.mock("../src/db/client", async () => {
   };
 });
 
-vi.stubEnv("MEDIA_DRIVER", "local");
 vi.stubEnv("MEDIA_PUBLIC_BASE_URL", "https://media.example.com/");
 
 let publicRouter: Router;
@@ -125,8 +124,8 @@ const PRODUCT_IMAGE_PATH = `products/${PRODUCT_ID}/${IMAGE_ID}.webp`;
 const CATEGORY_IMAGE_PATH = `categories/${CATEGORY_ID}/${IMAGE_ID}.webp`;
 const CONTENT_IMAGE_PATH = `content/${CONTENT_ID}/${IMAGE_ID}.webp`;
 const MEDIA_BASE = "https://media.example.com";
-const OLD_SUPABASE_BASE =
-  "https://old-project.supabase.co/storage/v1/object/public/product-images";
+const OLD_STORED_BASE =
+  "https://old-storage.example.com/files";
 
 function productRow(overrides: Row = {}): Row {
   return {
@@ -222,7 +221,7 @@ describe("public responses resolve local media URLs", () => {
     state.productRows.push(productRow());
     state.imageRows.push({
       id: IMAGE_ID,
-      url: `${OLD_SUPABASE_BASE}/${PRODUCT_IMAGE_PATH}`,
+      url: `${OLD_STORED_BASE}/${PRODUCT_IMAGE_PATH}`,
       storagePath: PRODUCT_IMAGE_PATH,
       altText: "Oak chair",
       sortOrder: 0,
@@ -246,7 +245,7 @@ describe("public responses resolve local media URLs", () => {
     state.productRows.push(productRow());
     state.imageRows.push({
       productId: PRODUCT_ID,
-      url: `${OLD_SUPABASE_BASE}/${PRODUCT_IMAGE_PATH}`,
+      url: `${OLD_STORED_BASE}/${PRODUCT_IMAGE_PATH}`,
       storagePath: PRODUCT_IMAGE_PATH,
     });
 
@@ -268,7 +267,7 @@ describe("public responses resolve local media URLs", () => {
     state.productRows.push(productRow());
     state.imageRows.push({
       productId: PRODUCT_ID,
-      url: `${OLD_SUPABASE_BASE}/${PRODUCT_IMAGE_PATH}`,
+      url: `${OLD_STORED_BASE}/${PRODUCT_IMAGE_PATH}`,
       storagePath: PRODUCT_IMAGE_PATH,
     });
     state.categoryRows.push({ name: "Living Room", slug: "living-room" });
@@ -293,7 +292,7 @@ describe("public responses resolve local media URLs", () => {
       name: "Living Room",
       slug: "living-room",
       parentId: null,
-      imageUrl: `${OLD_SUPABASE_BASE}/${CATEGORY_IMAGE_PATH}`,
+      imageUrl: `${OLD_STORED_BASE}/${CATEGORY_IMAGE_PATH}`,
       imageStoragePath: CATEGORY_IMAGE_PATH,
       description: null,
       sortOrder: 0,
@@ -321,7 +320,7 @@ describe("public responses resolve local media URLs", () => {
       title: "Winter collection",
       subtitle: null,
       body: null,
-      imageUrl: `${OLD_SUPABASE_BASE}/${CONTENT_IMAGE_PATH}`,
+      imageUrl: `${OLD_STORED_BASE}/${CONTENT_IMAGE_PATH}`,
       storagePath: CONTENT_IMAGE_PATH,
       buttonText: null,
       linkUrl: null,

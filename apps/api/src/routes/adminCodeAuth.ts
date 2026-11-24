@@ -23,6 +23,7 @@ import {
   requestVisitorIp,
   storefrontKeyMatches,
 } from "../lib/storefrontAccess";
+import { requireAdmin } from "../middleware/requireAdmin";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CODE_PATTERN = /^\d{6}$/;
@@ -165,6 +166,27 @@ adminCodeAuthRouter.post(
 
       res.status(401).json(GENERIC_CODE_FAILURE);
     }
+  },
+);
+
+adminCodeAuthRouter.all(
+  "/auth/otp/request",
+  (_req: Request, res: Response) => {
+    res.status(404).json({ error: "Not found" });
+  },
+);
+
+adminCodeAuthRouter.get(
+  "/me",
+  requireAdmin,
+  (req: Request, res: Response) => {
+    if (!req.admin) {
+      res.status(401).json(UNAUTHORIZED);
+      return;
+    }
+
+    res.set("Cache-Control", "no-store");
+    res.json(req.admin);
   },
 );
 

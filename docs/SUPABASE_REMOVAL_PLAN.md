@@ -929,17 +929,28 @@ real inbox (or the development log-only email sender).
   `docs/DEPLOYMENT.md`. `render.yaml` is unchanged because this is a web
   (Vercel) variable, not an API service variable.
 
-### Phase 7 - Remove Supabase code, dependencies, and environment variables
+### Phase 7 - Remove Supabase code, dependencies, and environment variables (done)
 
-- Delete `apps/api/src/lib/supabase.ts` and both web Supabase client files.
-- Remove `@supabase/supabase-js` and `@supabase/ssr` from package manifests and
-  regenerate the lockfile.
-- Remove `SUPABASE_*` from `env.ts`, `.env.example` files, `render.yaml`, and
-  the Render production example.
-- Update `README.md` and `docs/DEPLOYMENT.md` for the self-hosted design.
+- Deleted `apps/api/src/lib/supabase.ts`, the old
+  `apps/api/src/routes/adminAuth.ts` OTP route, and both web Supabase client
+  files. `GET /admin/me` now lives with the new code-auth router and accepts
+  only `x-admin-session`; a bearer token is always rejected.
+- Removed `@supabase/supabase-js` and `@supabase/ssr` from package manifests
+  and regenerated the lockfile with `pnpm install`.
+- Removed `SUPABASE_*` and `MEDIA_DRIVER` from `env.ts`, `.env.example` files,
+  `render.yaml`, and the Render production example. Local media storage is the
+  only driver; `/media` is always mounted.
+- Removed the Supabase `remotePatterns` path from the web config. Only the
+  `NEXT_PUBLIC_MEDIA_BASE_URL` `/media/**` pattern remains.
+- Updated `README.md` and `docs/DEPLOYMENT.md`. The Render files are now
+  explicitly marked as legacy references; the Docker/VPS deployment steps
+  remain phases 8-12.
+- Added empty owner-folder cleanup after media deletes and empty-folder
+  reporting/removal in `media:orphans`.
 - Tests: `pnpm install --frozen-lockfile` passes; `pnpm lint` and `pnpm build`
-  pass; repository grep for `supabase` only matches historical docs or the
-  removal plan; no Supabase runtime configuration is required to boot.
+  pass; repository grep for `supabase` only matches migration history, the
+  bootstrap role comments, the removal plan, and clearly labelled legacy notes;
+  no Supabase runtime configuration is required to boot.
 
 ### Phase 8 - Docker images for API and web
 

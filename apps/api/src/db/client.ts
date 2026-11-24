@@ -17,8 +17,7 @@ function connectionOptions(): {
   };
 
   // When DATABASE_SSL is unset, do not pass an SSL option at all. This keeps
-  // the driver's existing behavior, including any sslmode in DATABASE_URL,
-  // so the current Supabase connection keeps working.
+  // the driver's existing behavior, including any sslmode in DATABASE_URL.
   if (env.DATABASE_SSL) {
     options.ssl = env.DATABASE_SSL;
   }
@@ -27,8 +26,6 @@ function connectionOptions(): {
 }
 
 if (env.DATABASE_URL) {
-  // No Supabase pooler-specific options belong here. Plain PostgreSQL and
-  // the Supabase session pooler both use the normal Postgres protocol.
   connection = postgres(env.DATABASE_URL, connectionOptions());
   db = drizzle(connection);
 }

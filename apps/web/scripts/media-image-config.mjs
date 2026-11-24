@@ -3,8 +3,6 @@ import process from "node:process";
 
 export const DEV_MEDIA_ORIGIN = "http://localhost:4000";
 export const MEDIA_PATHNAME = "/media/**";
-export const SUPABASE_IMAGES_PATHNAME =
-  "/storage/v1/object/public/product-images/**";
 
 /**
  * @typedef {Object} RemotePattern
@@ -121,20 +119,6 @@ export function buildMediaImageSettings(env = process.env) {
       hostname: mediaOrigin.hostname,
       port: mediaOrigin.port,
       pathname: MEDIA_PATHNAME,
-    });
-  }
-
-  const supabaseUrl =
-    envValue(env, "SUPABASE_URL") ||
-    envValue(env, "NEXT_PUBLIC_SUPABASE_URL");
-  const supabaseOrigin = supabaseUrl ? parseMediaOrigin(supabaseUrl) : null;
-
-  if (supabaseOrigin) {
-    remotePatterns.push({
-      protocol: supabaseOrigin.protocol,
-      hostname: supabaseOrigin.hostname,
-      port: supabaseOrigin.port,
-      pathname: SUPABASE_IMAGES_PATHNAME,
     });
   }
 

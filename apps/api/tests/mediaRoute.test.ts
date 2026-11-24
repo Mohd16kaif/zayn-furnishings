@@ -56,8 +56,7 @@ afterEach(async () => {
 });
 
 async function startApp(options: {
-  driver: "local" | "supabase";
-  mediaDir?: string;
+  mediaDir: string;
 }): Promise<string> {
   const app = express();
   app.use(helmet());
@@ -111,10 +110,7 @@ function rawRequest(
 
 describe("media serving route", () => {
   it("serves a WebP image with fixed headers and CORS from the storefront origin", async () => {
-    const baseUrl = await startApp({
-      driver: "local",
-      mediaDir: tempDir,
-    });
+    const baseUrl = await startApp({ mediaDir: tempDir });
 
     const response = await fetch(
       `${baseUrl}/media/${RELATIVE_PATH}`,
@@ -144,10 +140,7 @@ describe("media serving route", () => {
   });
 
   it("supports HEAD without a body", async () => {
-    const baseUrl = await startApp({
-      driver: "local",
-      mediaDir: tempDir,
-    });
+    const baseUrl = await startApp({ mediaDir: tempDir });
 
     const response = await fetch(
       `${baseUrl}/media/${RELATIVE_PATH}`,
@@ -163,10 +156,7 @@ describe("media serving route", () => {
   });
 
   it("allows only GET and HEAD", async () => {
-    const baseUrl = await startApp({
-      driver: "local",
-      mediaDir: tempDir,
-    });
+    const baseUrl = await startApp({ mediaDir: tempDir });
 
     const response = await fetch(
       `${baseUrl}/media/${RELATIVE_PATH}`,
@@ -178,10 +168,7 @@ describe("media serving route", () => {
   });
 
   it("returns 404 for missing, invalid, traversal, and directory paths", async () => {
-    const baseUrl = await startApp({
-      driver: "local",
-      mediaDir: tempDir,
-    });
+    const baseUrl = await startApp({ mediaDir: tempDir });
 
     const missing = await fetch(
       `${baseUrl}/media/products/${OWNER_ID}/33333333-3333-4333-8333-333333333333.webp`,
@@ -208,25 +195,6 @@ describe("media serving route", () => {
       `/media/products/${OWNER_ID}/..\\${IMAGE_ID}.webp`,
     );
     expect(rawTraversal.status).toBe(404);
-  });
-
-  it("does not mount when the driver is Supabase or no media dir is provided", async () => {
-    const supabaseBaseUrl = await startApp({
-      driver: "supabase",
-      mediaDir: tempDir,
-    });
-    const supabaseResponse = await fetch(
-      `${supabaseBaseUrl}/media/${RELATIVE_PATH}`,
-    );
-    expect(supabaseResponse.status).toBe(404);
-
-    const missingDirBaseUrl = await startApp({
-      driver: "local",
-    });
-    const missingDirResponse = await fetch(
-      `${missingDirBaseUrl}/media/${RELATIVE_PATH}`,
-    );
-    expect(missingDirResponse.status).toBe(404);
   });
 
   it("does not serve a symlink that resolves outside MEDIA_DIR", async (context) => {
@@ -267,10 +235,7 @@ describe("media serving route", () => {
         throw error;
       }
 
-      const baseUrl = await startApp({
-        driver: "local",
-        mediaDir: tempDir,
-      });
+      const baseUrl = await startApp({ mediaDir: tempDir });
       const response = await fetch(
         `${baseUrl}/media/${RELATIVE_PATH}`,
       );

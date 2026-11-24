@@ -109,13 +109,6 @@ function parseTestDatabaseUrl(
     };
   }
 
-  if (url.hostname.toLowerCase().includes("supabase")) {
-    return {
-      error:
-        "Refusing to run: TEST_DATABASE_URL points at a Supabase host. Use the local plain-Postgres test database.",
-    };
-  }
-
   return { url };
 }
 

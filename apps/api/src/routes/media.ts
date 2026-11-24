@@ -116,14 +116,9 @@ export function createMediaRouter(options: {
 export function registerMediaRoute(
   app: Express,
   options: {
-    driver: string;
-    mediaDir?: string | null;
+    mediaDir: string;
   },
 ): void {
-  if (options.driver !== "local" || !options.mediaDir) {
-    return;
-  }
-
   app.use(
     "/media",
     createMediaRouter({

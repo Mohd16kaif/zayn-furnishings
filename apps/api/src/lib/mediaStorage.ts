@@ -3,6 +3,7 @@ import {
   mkdir,
   realpath,
   rename,
+  rmdir,
   stat,
   statfs,
   unlink,
@@ -10,19 +11,49 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { env } from "../config/env";
-import { getSupabaseAdmin } from "./supabase";
 
-export const PRODUCT_IMAGES_BUCKET = "product-images";
+export const MEDIA_FOLDERS = ["products", "content", "categories"] as const;
+
+const OWNER_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const MEDIA_PATH_PATTERN =
   /^(products|content|categories)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/i;
 
-export type MediaDriverName = "supabase" | "local";
-
 export interface MediaStorage {
-  readonly driver: MediaDriverName;
   put(path: string, buffer: Buffer, contentType: string): Promise<void>;
   remove(paths: string[]): Promise<void>;
+  removeEmptyDirectories(relativeDirectories: string[]): Promise<void>;
   publicUrl(path: string): string;
+}
+
+/**
+ * True only for a valid owner directory exactly one level under one of the
+ * three media folders, for example `products/<uuid>`. MEDIA_DIR itself and
+ * the three top-level folders never match.
+ */
+export function isMediaOwnerDirectory(relativePath: string): boolean {
+  if (
+    typeof relativePath !== "string" ||
+    relativePath.length === 0 ||
+    relativePath.includes("\0") ||
+    relativePath.includes("\\") ||
+    relativePath.includes("%") ||
+    relativePath.includes("//")
+  ) {
+    return false;
+  }
+
+  const parts = relativePath.split("/");
+
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  return (
+    (MEDIA_FOLDERS as readonly string[]).includes(parts[0]) &&
+    OWNER_ID_PATTERN.test(parts[1])
+  );
 }
 
 export class MediaStorageError extends Error {
@@ -144,8 +175,6 @@ export type LocalMediaStorageOptions = {
 };
 
 export class LocalMediaStorage implements MediaStorage {
-  readonly driver = "local" as const;
-
   private readonly mediaDir: string;
   private readonly publicBaseUrl: string;
   private readonly minFreeBytes: number;
@@ -257,6 +286,47 @@ export class LocalMediaStorage implements MediaStorage {
     }
   }
 
+  private async removeEmptyParent(filePath: string): Promise<void> {
+    const root = await resolveRoot(this.mediaDir);
+
+    if (!root) {
+      return;
+    }
+
+    const parent = path.dirname(filePath);
+
+    if (!isInside(root, parent)) {
+      return;
+    }
+
+    const relativeParent = path
+      .relative(root, parent)
+      .split(path.sep)
+      .join("/");
+
+    if (!isMediaOwnerDirectory(relativeParent)) {
+      return;
+    }
+
+    try {
+      await rmdir(parent);
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code !== undefined &&
+        ["ENOENT", "ENOTEMPTY", "EEXIST"].includes(
+          (error as { code: string }).code,
+        )
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
   async remove(paths: string[]): Promise<void> {
     const errors: string[] = [];
 
@@ -272,6 +342,7 @@ export class LocalMediaStorage implements MediaStorage {
         }
 
         await unlink(resolved);
+        await this.removeEmptyParent(resolved);
       } catch (error) {
         if (
           typeof error === "object" &&
@@ -295,6 +366,75 @@ export class LocalMediaStorage implements MediaStorage {
     }
   }
 
+  async removeEmptyDirectories(
+    relativeDirectories: string[],
+  ): Promise<void> {
+    const root = await resolveRoot(this.mediaDir);
+
+    if (!root) {
+      return;
+    }
+
+    const errors: string[] = [];
+
+    for (const relativeDirectory of relativeDirectories) {
+      if (!isMediaOwnerDirectory(relativeDirectory)) {
+        continue;
+      }
+
+      const candidate = path.join(
+        root,
+        ...relativeDirectory.split("/"),
+      );
+
+      let resolved: string;
+
+      try {
+        resolved = await realpath(candidate);
+      } catch {
+        continue;
+      }
+
+      if (!isInside(root, resolved)) {
+        continue;
+      }
+
+      const relativeToRoot = path
+        .relative(root, resolved)
+        .split(path.sep)
+        .join("/");
+
+      if (!isMediaOwnerDirectory(relativeToRoot)) {
+        continue;
+      }
+
+      try {
+        await rmdir(resolved);
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          ["ENOENT", "ENOTEMPTY", "EEXIST"].includes(
+            (error as { code?: string }).code ?? "",
+          )
+        ) {
+          continue;
+        }
+
+        errors.push(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new MediaStorageError(
+        `Failed to delete empty media folders: ${errors.join("; ")}`,
+      );
+    }
+  }
+
   publicUrl(relativePath: string): string {
     const checkedPath = validateMediaPath(relativePath);
 
@@ -302,48 +442,7 @@ export class LocalMediaStorage implements MediaStorage {
   }
 }
 
-export class SupabaseMediaStorage implements MediaStorage {
-  readonly driver = "supabase" as const;
-
-  private storage() {
-    return getSupabaseAdmin().storage.from(PRODUCT_IMAGES_BUCKET);
-  }
-
-  async put(
-    relativePath: string,
-    buffer: Buffer,
-    contentType: string,
-  ): Promise<void> {
-    const { error } = await this.storage().upload(relativePath, buffer, {
-      contentType,
-      cacheControl: "31536000",
-      upsert: false,
-    });
-
-    if (error) {
-      throw new MediaStorageError(error.message);
-    }
-  }
-
-  async remove(paths: string[]): Promise<void> {
-    if (paths.length === 0) {
-      return;
-    }
-
-    const { error } = await this.storage().remove(paths);
-
-    if (error) {
-      throw new MediaStorageError(error.message);
-    }
-  }
-
-  publicUrl(relativePath: string): string {
-    return this.storage().getPublicUrl(relativePath).data.publicUrl;
-  }
-}
-
 export type MediaStorageConfig = {
-  driver: MediaDriverName;
   mediaDir?: string;
   publicBaseUrl?: string;
   minFreeMb?: number;
@@ -353,19 +452,15 @@ export type MediaStorageConfig = {
 export function createMediaStorage(
   config: MediaStorageConfig,
 ): MediaStorage {
-  if (config.driver === "supabase") {
-    return new SupabaseMediaStorage();
-  }
-
   if (!config.mediaDir) {
     throw new MediaStorageError(
-      "MEDIA_DIR is required for the local media driver.",
+      "MEDIA_DIR is required for media storage.",
     );
   }
 
   if (!config.publicBaseUrl) {
     throw new MediaStorageError(
-      "MEDIA_PUBLIC_BASE_URL is required for the local media driver.",
+      "MEDIA_PUBLIC_BASE_URL is required for media storage.",
     );
   }
 
@@ -382,7 +477,6 @@ let cachedMediaStorage: MediaStorage | null = null;
 export function getMediaStorage(): MediaStorage {
   if (!cachedMediaStorage) {
     cachedMediaStorage = createMediaStorage({
-      driver: env.MEDIA_DRIVER,
       mediaDir: env.MEDIA_DIR,
       publicBaseUrl: env.MEDIA_PUBLIC_BASE_URL,
       minFreeMb: env.MEDIA_MIN_FREE_MB,

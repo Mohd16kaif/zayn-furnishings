@@ -4,7 +4,6 @@ import {
   buildMediaImageSettings,
   DEV_MEDIA_ORIGIN,
   MEDIA_PATHNAME,
-  SUPABASE_IMAGES_PATHNAME,
 } from "./media-image-config.mjs";
 
 const { matchRemotePattern } = remotePatternModule;
@@ -20,12 +19,6 @@ function allows(settings, url) {
 function mediaPattern(settings) {
   return settings.remotePatterns.find(
     (pattern) => pattern.pathname === MEDIA_PATHNAME,
-  );
-}
-
-function supabasePattern(settings) {
-  return settings.remotePatterns.find(
-    (pattern) => pattern.pathname === SUPABASE_IMAGES_PATHNAME,
   );
 }
 
@@ -178,66 +171,16 @@ assert.equal(
   "a media base URL with a path must be rejected",
 );
 
-const withoutSupabase = buildMediaImageSettings({
-  NODE_ENV: "development",
-  NEXT_PUBLIC_MEDIA_BASE_URL: "https://api.example.com",
-});
-
-assert.equal(
-  supabasePattern(withoutSupabase),
-  undefined,
-  "no Supabase pattern without SUPABASE_URL",
-);
-
-const withSupabase = buildMediaImageSettings({
-  NODE_ENV: "development",
-  NEXT_PUBLIC_MEDIA_BASE_URL: "https://api.example.com",
-  NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co/",
-});
-
-assert.equal(
-  supabasePattern(withSupabase)?.hostname,
-  "project.supabase.co",
-  "Supabase pattern must use the configured host",
-);
-assert.equal(
-  allows(
-    withSupabase,
-    `https://project.supabase.co/storage/v1/object/public/product-images/${IMAGE_PATH}`,
-  ),
-  true,
-  "Supabase product images must still be allowed",
-);
-assert.equal(
-  allows(
-    withSupabase,
-    `https://project.supabase.co/storage/v1/object/public/other/${IMAGE_PATH}`,
-  ),
-  false,
-  "other Supabase buckets must be blocked",
-);
-
-const supabaseServerUrl = buildMediaImageSettings({
-  NODE_ENV: "development",
-  SUPABASE_URL: "https://server.supabase.co",
-});
-
-assert.equal(
-  supabasePattern(supabaseServerUrl)?.hostname,
-  "server.supabase.co",
-  "SUPABASE_URL must also keep the Supabase pattern",
-);
-
-const badSupabase = buildMediaImageSettings({
-  NODE_ENV: "development",
-  SUPABASE_URL: "http://[invalid",
-});
-
 assert.doesNotThrow(() => buildMediaImageSettings({}));
 assert.equal(
-  supabasePattern(badSupabase),
-  undefined,
-  "an invalid SUPABASE_URL must not crash or create a pattern",
+  dev.remotePatterns.length,
+  1,
+  "only the /media pattern may remain",
+);
+assert.equal(
+  productionSet.remotePatterns.length,
+  1,
+  "production must expose only the /media pattern",
 );
 
 console.log(

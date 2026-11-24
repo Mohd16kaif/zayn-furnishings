@@ -7,54 +7,42 @@ import {
 const PRODUCT_ID = "11111111-1111-4111-8111-111111111111";
 const IMAGE_ID = "22222222-2222-4222-8222-222222222222";
 const MEDIA_PATH = `products/${PRODUCT_ID}/${IMAGE_ID}.webp`;
-const STORED_URL = `https://old-project.supabase.co/storage/v1/object/public/product-images/${MEDIA_PATH}`;
+const STORED_URL = `https://old-storage.example.com/files/${MEDIA_PATH}`;
 const BASE_URL = "https://api.example.com";
 
-const LOCAL: MediaUrlConfig = {
-  driver: "local",
-  publicBaseUrl: BASE_URL,
-};
-
-const SUPABASE: MediaUrlConfig = {
-  driver: "supabase",
+const CONFIG: MediaUrlConfig = {
   publicBaseUrl: BASE_URL,
 };
 
 describe("resolveMediaUrl", () => {
-  it("builds a media URL from the storage path with the local driver", () => {
-    expect(resolveMediaUrl(MEDIA_PATH, STORED_URL, LOCAL)).toBe(
+  it("builds a media URL from the storage path", () => {
+    expect(resolveMediaUrl(MEDIA_PATH, STORED_URL, CONFIG)).toBe(
       `${BASE_URL}/media/${MEDIA_PATH}`,
     );
   });
 
   it("builds a media URL when the stored URL is missing", () => {
-    expect(resolveMediaUrl(MEDIA_PATH, null, LOCAL)).toBe(
+    expect(resolveMediaUrl(MEDIA_PATH, null, CONFIG)).toBe(
       `${BASE_URL}/media/${MEDIA_PATH}`,
     );
   });
 
   it("keeps the stored URL when there is no storage path", () => {
-    expect(resolveMediaUrl(null, STORED_URL, LOCAL)).toBe(STORED_URL);
-    expect(resolveMediaUrl(undefined, STORED_URL, LOCAL)).toBe(STORED_URL);
-    expect(resolveMediaUrl("", STORED_URL, LOCAL)).toBe(STORED_URL);
-  });
-
-  it("keeps the stored URL for the Supabase driver", () => {
-    expect(resolveMediaUrl(MEDIA_PATH, STORED_URL, SUPABASE)).toBe(
+    expect(resolveMediaUrl(null, STORED_URL, CONFIG)).toBe(STORED_URL);
+    expect(resolveMediaUrl(undefined, STORED_URL, CONFIG)).toBe(
       STORED_URL,
     );
+    expect(resolveMediaUrl("", STORED_URL, CONFIG)).toBe(STORED_URL);
   });
 
   it("normalizes trailing slashes in the public base URL", () => {
     expect(
       resolveMediaUrl(MEDIA_PATH, STORED_URL, {
-        driver: "local",
         publicBaseUrl: `${BASE_URL}/`,
       }),
     ).toBe(`${BASE_URL}/media/${MEDIA_PATH}`);
     expect(
       resolveMediaUrl(MEDIA_PATH, STORED_URL, {
-        driver: "local",
         publicBaseUrl: `${BASE_URL}///`,
       }),
     ).toBe(`${BASE_URL}/media/${MEDIA_PATH}`);
@@ -73,7 +61,6 @@ describe("resolveMediaUrl", () => {
     ]) {
       expect(
         resolveMediaUrl(MEDIA_PATH, STORED_URL, {
-          driver: "local",
           publicBaseUrl,
         }),
         `expected ${JSON.stringify(publicBaseUrl)} to fall back`,
@@ -100,7 +87,7 @@ describe("resolveMediaUrl", () => {
 
     for (const hostilePath of hostilePaths) {
       expect(
-        resolveMediaUrl(hostilePath, STORED_URL, LOCAL),
+        resolveMediaUrl(hostilePath, STORED_URL, CONFIG),
         `expected ${JSON.stringify(hostilePath)} to fall back`,
       ).toBe(STORED_URL);
     }

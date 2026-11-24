@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { env } from "../config/env";
@@ -9,7 +10,7 @@ import {
 } from "../db/schema";
 import {
   getMediaStorage,
-  LocalMediaStorage,
+  isMediaOwnerDirectory,
   resolveExistingMediaFile,
   validateMediaPath,
 } from "../lib/mediaStorage";
@@ -71,6 +72,63 @@ async function listMediaFiles(
   return { files, ignored };
 }
 
+async function listEmptyOwnerDirectories(
+  mediaDir: string,
+): Promise<string[]> {
+  const empty: string[] = [];
+
+  let topEntries: Dirent[];
+
+  try {
+    topEntries = await readdir(mediaDir, { withFileTypes: true });
+  } catch {
+    return empty;
+  }
+
+  for (const top of topEntries) {
+    if (!top.isDirectory() || top.isSymbolicLink()) {
+      continue;
+    }
+
+    let ownerEntries: Dirent[];
+
+    try {
+      ownerEntries = await readdir(
+        path.join(mediaDir, top.name),
+        { withFileTypes: true },
+      );
+    } catch {
+      continue;
+    }
+
+    for (const owner of ownerEntries) {
+      if (!owner.isDirectory() || owner.isSymbolicLink()) {
+        continue;
+      }
+
+      const relativePath = `${top.name}/${owner.name}`;
+
+      if (!isMediaOwnerDirectory(relativePath)) {
+        continue;
+      }
+
+      try {
+        const contents = await readdir(
+          path.join(mediaDir, top.name, owner.name),
+        );
+
+        if (contents.length === 0) {
+          empty.push(relativePath);
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return empty.sort();
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const deleteMode = args.includes("--delete");
@@ -78,19 +136,6 @@ async function main(): Promise<void> {
 
   if (deleteMode && dryRun) {
     console.error("Use either --delete or --dry-run, not both.");
-    process.exitCode = 1;
-    return;
-  }
-
-  if (env.MEDIA_DRIVER !== "local") {
-    console.log(
-      `MEDIA_DRIVER is ${env.MEDIA_DRIVER}; media:orphans only applies to the local driver.`,
-    );
-    return;
-  }
-
-  if (!env.MEDIA_DIR) {
-    console.error("MEDIA_DIR is required for the local media driver.");
     process.exitCode = 1;
     return;
   }
@@ -103,12 +148,6 @@ async function main(): Promise<void> {
 
   const mediaDir = env.MEDIA_DIR;
   const storage = getMediaStorage();
-
-  if (!(storage instanceof LocalMediaStorage)) {
-    console.error("The active media storage is not local.");
-    process.exitCode = 1;
-    return;
-  }
 
   const [productRows, contentRows, categoryRows] = await Promise.all([
     db
@@ -148,6 +187,7 @@ async function main(): Promise<void> {
 
   const referencedPaths = new Set(referenced.map((row) => row.path));
   const { files, ignored } = await listMediaFiles(mediaDir);
+  const emptyFolders = await listEmptyOwnerDirectories(mediaDir);
   const fileSet = new Set(files);
   const orphans = files.filter((file) => !referencedPaths.has(file));
   const missing: ReferencedRow[] = [];
@@ -173,6 +213,12 @@ async function main(): Promise<void> {
     console.log(`  orphan ${orphan}`);
   }
 
+  console.log(`Empty media folders: ${emptyFolders.length}`);
+
+  for (const emptyFolder of emptyFolders) {
+    console.log(`  empty ${emptyFolder}`);
+  }
+
   console.log(`Missing referenced files: ${missing.length}`);
 
   for (const row of missing) {
@@ -190,6 +236,11 @@ async function main(): Promise<void> {
   if (deleteMode && orphans.length > 0) {
     await storage.remove(orphans);
     console.log(`Deleted orphan files: ${orphans.length}`);
+  }
+
+  if (deleteMode && emptyFolders.length > 0) {
+    await storage.removeEmptyDirectories(emptyFolders);
+    console.log(`Deleted empty media folders: ${emptyFolders.length}`);
   }
 }
 

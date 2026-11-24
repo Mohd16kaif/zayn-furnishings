@@ -1,6 +1,5 @@
 export const DEV_MEDIA_ORIGIN: string;
 export const MEDIA_PATHNAME: string;
-export const SUPABASE_IMAGES_PATHNAME: string;
 
 export type RemotePattern = {
   protocol: "http" | "https";

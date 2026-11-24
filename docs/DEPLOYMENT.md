@@ -5,10 +5,19 @@ This guide covers the staging stack and the later production stack:
 - API: Render web service (Node runtime); `render.yaml` deploys staging only,
   and `docs/render.production.example.yaml` holds the production reference for later
 - Web: Vercel project, root directory `apps/web`, built from `apps/web/vercel.json`
-- Database and Auth: Supabase
+- Database: plain PostgreSQL addressed by `DATABASE_URL`
+- Admin auth: the application's own email-code login and database-backed sessions
+- Media: local files served by the API from `/media`
 - Payments: Stripe
 - Email: Resend
 - SMS verification: Twilio
+
+> **Legacy hosting note.** The Render and Vercel hosting sections below describe
+> the layout that existed during the Supabase era. Supabase is fully removed
+> from the application now. Those hosting sections will be rewritten for the
+> Docker-on-a-VPS target in phases 8-12 of
+> [docs/SUPABASE_REMOVAL_PLAN.md](SUPABASE_REMOVAL_PLAN.md). Do not treat them
+> as the final deployment instructions.
 
 Nothing is deployed yet. Replace every `<...>` placeholder with the real value
 for your accounts. Never put a real secret in a tracked file; use the Render and
@@ -24,12 +33,12 @@ Vercel dashboards.
 | Web branch | `main` | `production` |
 | API URL | `<staging-api>` (example: `https://zayn-api-staging.onrender.com`) | `<production-api>` (example: `https://api.example.com`) |
 | Web URL | `<staging-web>` (example: `https://zayn-staging.vercel.app`) | `<production-web>` (example: `https://www.example.com`) |
-| Supabase project | staging project only | production project only |
+| Database | staging PostgreSQL database | production PostgreSQL database |
 | Stripe mode | test mode | live mode |
 | Store default | open (staging) | open only after the owner opens it |
 
-Use two separate Supabase projects. Do not point staging at the production
-database, even for a quick test.
+Use separate staging and production databases. Do not point staging at the
+production database, even for a quick test.
 
 The real Render URL is shown in the Render Dashboard after each service is
 created. The real Vercel URL is shown after the first deployment.
@@ -47,10 +56,9 @@ stored in Git.
 | `NODE_ENV` | Node runtime mode; turns on the production config checks | Set in `render.yaml` (staging) or the production example | `production` | `production` |
 | `NODE_VERSION` | Node version Render installs | Set in `render.yaml` (staging) or the production example; Render supports this variable | `24.15.0` | `24.15.0` |
 | `PORT` | HTTP port | Render provides it automatically | Do not set | Do not set |
-| `DATABASE_URL` | Supabase Postgres connection string | Supabase project -> Connect -> Session pooler URI (port `5432`) | Staging Supabase project | Production Supabase project |
-| `SUPABASE_URL` | Supabase project URL | Supabase -> Project Settings -> API | Staging project URL | Production project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase server key; full admin access | Supabase -> Project Settings -> API -> `service_role` | Staging project key | Production project key |
-| `SUPABASE_ANON_KEY` | Supabase public key; used to send admin sign-in codes | Supabase -> Project Settings -> API -> `anon` | Staging project key | Production project key |
+| `DATABASE_URL` | Plain PostgreSQL connection string | Your database provider | Staging database | Production database |
+| `MEDIA_DIR` | Absolute media directory inside the API runtime | Choose a persistent path | Required | Required |
+| `MEDIA_PUBLIC_BASE_URL` | Public API origin used for `/media` image URLs; no path or trailing slash | The API's public origin | `<staging-api>` | `<production-api>` |
 | `ADMIN_AUTH_SECRET` | Secret used to hash admin email login codes; at least 32 characters | Generate a random value (below) | Required in staging; use a different value from production | Required in production; use a different value from staging |
 | `OWNER_EMAIL` | Owner/admin email used by the app | Your own records | Test inbox you control | The real owner inbox |
 | `WEB_ORIGIN` | Exact web origin allowed by CORS; no trailing slash | The Vercel project URL or custom domain | `<staging-web>` | `<production-web>` |
@@ -69,7 +77,7 @@ Notes:
   `STRIPE_SECRET_KEY` starts with `sk_live_`, `rk_live_`, or is otherwise a live
   key. Staging must use a test key.
 - With `NODE_ENV=production`, the API requires `DATABASE_URL`,
-  `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, and
+  `MEDIA_DIR`, `MEDIA_PUBLIC_BASE_URL`, `STRIPE_SECRET_KEY`, and
   `STRIPE_WEBHOOK_SECRET` even on staging. Set real values.
 - `ADMIN_AUTH_SECRET` is required whenever `APP_ENV` is `staging` or
   `production`. Use a random value of at least 32 characters, and never reuse
@@ -82,8 +90,8 @@ Notes:
   but the stub code still works.
 - Missing Resend settings do not stop the API. It logs a warning and writes
   emails to the log instead of sending them.
-- `SUPABASE_ANON_KEY` is not in the production-required list, but admin email
-  sign-in needs it. Set it anyway.
+- Admin sign-in uses the API's own email-code and session tables. No external
+  auth service key is required.
 
 Generate a storefront key without adding any dependency:
 
@@ -103,10 +111,8 @@ staging and production projects use different values.
 | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | Web app mode; controls the STAGING banner and noindex | Set in Vercel | `staging` | `production` |
 | `NEXT_PUBLIC_API_URL` | API base URL used by the browser and server code | Render service URL | `<staging-api>` | `<production-api>` |
-| `NEXT_PUBLIC_MEDIA_BASE_URL` | Public origin that serves `/media` images through `next/image`; no path or trailing slash | The API's public origin; must equal the API's `MEDIA_PUBLIC_BASE_URL` | `<staging-api>` when the API uses `MEDIA_DRIVER=local` | `<production-api>` when the API uses `MEDIA_DRIVER=local` |
+| `NEXT_PUBLIC_MEDIA_BASE_URL` | Public origin that serves `/media` images through `next/image`; no path or trailing slash | The API's public origin; must equal the API's `MEDIA_PUBLIC_BASE_URL` | `<staging-api>` | `<production-api>` |
 | `NEXT_PUBLIC_SITE_URL` | Public web origin used for canonical links, the sitemap, and the admin same-origin check | Your domain | `<staging-web>` | `<production-web>` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase -> Project Settings -> API | Staging project URL | Production project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public key used by the browser | Supabase -> Project Settings -> API -> `anon` | Staging project key | Production project key |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe public key used by checkout | Stripe -> Developers -> API keys | `pk_test_...` | `pk_live_...` |
 | `STOREFRONT_API_KEY` | Server-only shared secret sent to the API | Same value as the API's `STOREFRONT_API_KEY` | Same as Render staging | Same as Render production |
 | `APPLE_PAY_DOMAIN_ASSOCIATION` | Server-only contents of the Apple Pay domain association file | Stripe -> Apple Pay domain registration (exact wording may vary) | Usually empty (route returns 404); set only if you test Apple Pay on staging | Exact file contents from Stripe |
@@ -117,10 +123,8 @@ Notes:
   must never see it.
 - `APPLE_PAY_DOMAIN_ASSOCIATION` must not be prefixed with `NEXT_PUBLIC_`.
 - `NEXT_PUBLIC_MEDIA_BASE_URL` is read at build time and inlined into the
-  `next/image` allow-list. When the API runs with `MEDIA_DRIVER=local`, set
-  the API's `MEDIA_DIR` and `MEDIA_PUBLIC_BASE_URL` and set this web variable
-  to the exact same origin (scheme, hostname, and port). It must not include a
-  path. With the current Supabase media driver it is not required.
+  `next/image` allow-list. Set it to the exact same origin (scheme, hostname,
+  and port) as the API's `MEDIA_PUBLIC_BASE_URL`. It must not include a path.
 - After changing any Vercel environment variable, redeploy the project.
 - In the Vercel project settings, set the Root Directory to `apps/web`.
   "Include source files outside of the Root Directory in the Build Step" is on
@@ -187,24 +191,19 @@ curl.exe -i https://<production-web>/.well-known/apple-developer-merchantid-doma
 The response should be 200, `content-type: text/plain`, and no redirect. If the
 variable is empty, the expected response is 404.
 
-## 4. Supabase setup
+## 4. Database, admin auth, and media
 
-For each environment's Supabase project:
-
-1. Set Authentication -> URL Configuration -> Site URL to the web origin:
-   - Staging: `<staging-web>`
-   - Production: `<production-web>`
-2. Add Redirect URLs for that web origin. The app currently signs in with a
-   six-digit email code (no magic-link callback), so these are a safety net:
-   - `<staging-web>/admin/login` and `<staging-web>/admin`
-   - `<production-web>/admin/login` and `<production-web>/admin`
-3. Keep `http://localhost:3000` in the allowed redirect list for local
-   development if you use it.
-4. Database connection: use the Supabase session pooler URI on port `5432`,
-   not the transaction pooler on port `6543`. The repository README explains
-   why (IPv4 compatibility from Render).
-5. The service role key belongs only in the Render API service. Never expose it
-   to the web project or the browser.
+- Set `DATABASE_URL` to a plain PostgreSQL database. No external database or
+  auth provider is required.
+- Admin sign-in uses the API's own email-code endpoint and the
+  `admin_login_codes` / `admin_sessions` tables. Set `ADMIN_AUTH_SECRET` and
+  `OWNER_EMAIL`; bootstrap the first owner with
+  `pnpm --filter @zayn/api admin:create-owner`.
+- Uploaded images are written under `MEDIA_DIR` and served from the API at
+  `/media`. Set `MEDIA_PUBLIC_BASE_URL` on the API and
+  `NEXT_PUBLIC_MEDIA_BASE_URL` on the web project to the same public origin.
+- The full database, media-volume, reverse-proxy, and backup deployment
+  procedure will be written in phases 8-12.
 
 ## 5. Deploy the API on Render (staging first)
 
@@ -295,7 +294,7 @@ The owner may be entering real data, so migrations are **additive only**:
 Routine:
 
 1. Generate and review the migration locally (`pnpm db:generate`).
-2. Take a Supabase backup of the production database before every production
+2. Take a database backup of the production database before every production
    migration.
 3. Apply the migration to staging first: `pnpm db:migrate` with staging
    `DATABASE_URL`.
@@ -326,7 +325,7 @@ Rollback:
   Redeploy.
 - Database changes are **not** rolled back automatically. Additive changes can
   usually stay in place while the previous app version runs. If a migration
-  caused the problem, restore the Supabase backup taken before the migration.
+  caused the problem, restore the database backup taken before the migration.
 
 ## 10. Post-deploy checklist
 
@@ -388,5 +387,6 @@ Other:
 - Stripe Dashboard labels for Apple Pay domain registration and webhook event
   selection may change; confirm the current wording.
 - Twilio trial restrictions and production SMS deliverability were not tested.
-- Supabase Auth redirect URL wildcard behavior was not tested; this guide lists
-  exact URLs instead of wildcards.
+- Local media serving was verified in the local Next dev server; re-check it
+  behind the final reverse proxy when the Docker/VPS hosting sections are
+  written in phases 8-12.

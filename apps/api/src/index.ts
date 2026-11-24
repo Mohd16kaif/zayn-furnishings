@@ -7,7 +7,6 @@ import {
   env,
 } from "./config/env";
 import { initializeEmailSender } from "./emails/sender";
-import { adminAuthRouter } from "./routes/adminAuth";
 import { adminCodeAuthRouter } from "./routes/adminCodeAuth";
 import { adminCategoriesRouter } from "./routes/adminCategories";
 import { adminContentRouter } from "./routes/adminContent";
@@ -46,7 +45,6 @@ app.use(
   }),
 );
 registerMediaRoute(app, {
-  driver: env.MEDIA_DRIVER,
   mediaDir: env.MEDIA_DIR,
 });
 
@@ -64,7 +62,6 @@ app.use("/api/auth", authRouter);
 app.use("/api", ordersRouter);
 app.use("/api/public", publicRouter);
 app.use("/admin", adminCodeAuthRouter);
-app.use("/admin", adminAuthRouter);
 app.use("/admin", adminCategoriesRouter);
 app.use("/admin", adminContentRouter);
 app.use("/admin", adminSettingsRouter);
@@ -80,11 +77,7 @@ if (adminAuthSecretIsDevFallback) {
 }
 
 console.log(`App environment: ${env.APP_ENV}`);
-console.log(
-  `Media driver: ${env.MEDIA_DRIVER}${
-    env.MEDIA_DRIVER === "local" ? ` (${env.MEDIA_DIR})` : ""
-  }`,
-);
+console.log(`Media directory: ${env.MEDIA_DIR}`);
 console.log(`Phone verifier: ${activePhoneVerifierName}`);
 
 const stripeKeyWarning = testStripeKeyInProductionWarning(

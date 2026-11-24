@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEV_ADMIN_AUTH_SECRET,
@@ -66,6 +67,8 @@ describe("ADMIN_AUTH_SECRET env validation", () => {
       NODE_ENV: "development",
       APP_ENV: "staging",
       ADMIN_AUTH_SECRET: "a".repeat(32),
+      MEDIA_DIR: path.resolve("media-data"),
+      MEDIA_PUBLIC_BASE_URL: "https://api.example.com",
     });
 
     expect(result.success).toBe(true);

@@ -1,9 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
 import type { NextFunction, Request, Response } from "express";
 import { db } from "../db/client";
-import { adminUsers, auditLog } from "../db/schema";
 import { findAdminByAdminSession } from "../lib/adminAuthService";
-import { getSupabaseAdmin } from "../lib/supabase";
 
 export type AdminContext = {
   id: string;
@@ -20,19 +17,6 @@ declare global {
   }
 }
 
-function getBearerToken(header: string | undefined): string | null {
-  if (!header) {
-    return null;
-  }
-
-  const [scheme, token] = header.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
-
-  return token;
-}
-
 export async function requireAdmin(
   req: Request,
   res: Response,
@@ -40,38 +24,7 @@ export async function requireAdmin(
 ): Promise<void> {
   const sessionToken = req.get("x-admin-session")?.trim();
 
-  // The new admin session wins when both credentials are present. An invalid
-  // x-admin-session does not fall back to Supabase auth.
-  if (sessionToken) {
-    if (!db) {
-      res.status(500).json({ error: "Database is not configured" });
-      return;
-    }
-
-    try {
-      const lookup = await findAdminByAdminSession(db, sessionToken);
-
-      if (!lookup) {
-        res.status(401).json({ error: "Unauthorized" });
-        return;
-      }
-
-      req.admin = lookup.admin;
-      next();
-    } catch (error) {
-      console.error(
-        "Admin session verification failed:",
-        error instanceof Error ? error.message : error,
-      );
-      res.status(401).json({ error: "Unauthorized" });
-    }
-
-    return;
-  }
-
-  const token = getBearerToken(req.headers.authorization);
-
-  if (!token) {
+  if (!sessionToken) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -81,85 +34,22 @@ export async function requireAdmin(
     return;
   }
 
-  let userId: string;
-  let userEmail: string;
-
   try {
-    const { data, error } = await getSupabaseAdmin().auth.getUser(token);
+    const lookup = await findAdminByAdminSession(db, sessionToken);
 
-    if (error || !data.user?.email) {
+    if (!lookup) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
 
-    if (!data.user.email_confirmed_at) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-
-    userId = data.user.id;
-    userEmail = data.user.email.toLowerCase();
-  } catch (error) {
-    console.error(
-      "Admin token verification failed:",
-      error instanceof Error ? error.message : error,
-    );
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-
-  try {
-    const [admin] = await db
-      .select()
-      .from(adminUsers)
-      .where(
-        and(
-          eq(adminUsers.isActive, true),
-          sql`lower(${adminUsers.email}) = ${userEmail}`,
-        ),
-      )
-      .limit(1);
-
-    if (!admin) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    if (admin.authUserId && admin.authUserId !== userId) {
-      console.warn("admin auth_user_id mismatch");
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    if (!admin.authUserId) {
-      await db
-        .update(adminUsers)
-        .set({ authUserId: userId, updatedAt: new Date() })
-        .where(eq(adminUsers.id, admin.id));
-
-      await db.insert(auditLog).values({
-        adminUserId: admin.id,
-        action: "admin.login",
-        entity: "admin_user",
-        entityId: admin.id,
-        details: { email: admin.email, firstLogin: true },
-      });
-    }
-
-    req.admin = {
-      id: admin.id,
-      email: admin.email,
-      name: admin.name,
-      role: admin.role,
-    };
-
+    req.admin = lookup.admin;
     next();
   } catch (error) {
     console.error(
-      "Admin lookup failed:",
+      "Admin session verification failed:",
       error instanceof Error ? error.message : error,
     );
-    res.status(500).json({ error: "Server error" });
+    res.status(401).json({ error: "Unauthorized" });
   }
 }
 

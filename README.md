@@ -7,9 +7,11 @@ setup only** — product, cart, and checkout features will be added later.
 
 - **Monorepo:** pnpm workspaces
 - **Web (`apps/web`):** Next.js (App Router, TypeScript, Tailwind CSS, ESLint), deployed to Vercel
-- **API (`apps/api`):** Node.js + Express + TypeScript, deployed to Render
+- **API (`apps/api`):** Node.js + Express + TypeScript
 - **Shared (`packages/shared`):** shared TypeScript types and constants
-- **Database:** Supabase Postgres via Drizzle ORM + `drizzle-kit` and the `postgres` driver
+- **Database:** PostgreSQL via Drizzle ORM + `drizzle-kit` and the `postgres` driver
+- **Admin auth:** the app's own email-code login and database-backed sessions
+- **Media:** local files served from the API at `/media`
 - **Other:** zod (validation), dotenv (env loading), tsx (dev runner), CORS, helmet
 
 ## Structure
@@ -43,7 +45,7 @@ Copy-Item apps/api/.env.example apps/api/.env
 Copy-Item apps/web/.env.example apps/web/.env
 ```
 
-Then fill in `apps/api/.env` with your Supabase values (see below).
+Then fill in `apps/api/.env` with your database and service values (see below).
 
 ## Run
 
@@ -76,32 +78,32 @@ together.
 | --------------------------- | ------------------------------------------------------------ |
 | `PORT`                      | API port (default `4000`)                                    |
 | `NODE_ENV`                  | `development` / `test` / `production`                        |
-| `DATABASE_URL`              | Supabase Postgres connection string (session pooler)         |
-| `SUPABASE_URL`              | Supabase project URL                                         |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side only)                 |
+| `DATABASE_URL`              | Plain PostgreSQL connection string                           |
+| `MEDIA_DIR`                 | Absolute media directory (development defaults to `apps/api/media-data`) |
+| `MEDIA_PUBLIC_BASE_URL`     | Public API origin used to build `/media` image URLs          |
+| `ADMIN_AUTH_SECRET`         | Secret for admin login codes and sessions                    |
 | `WEB_ORIGIN`                | Allowed CORS origin (e.g. `http://localhost:3000`)           |
 
-> **Database connection:** use the Supabase **session pooler** connection string
-> (port `5432`), **not** the transaction pooler on port `6543`. Render's free
-> tier is IPv4-only while Supabase's direct connection is IPv6, so the session
-> pooler is required.
+Local development can use the plain PostgreSQL container documented in
+`docker-compose.dev.yml`. Admin sign-in uses the app's own email-code flow; no
+external auth provider is required.
 
 ### `apps/web/.env`
 
 | Variable                        | Notes                                  |
 | ------------------------------- | -------------------------------------- |
 | `NEXT_PUBLIC_API_URL`           | Base URL of the API (e.g. `http://localhost:4000`) |
+| `NEXT_PUBLIC_MEDIA_BASE_URL`    | API public origin allowed by `next/image` for `/media` URLs |
 | `APPLE_PAY_DOMAIN_ASSOCIATION`  | Server-only Apple Pay domain association file contents; never `NEXT_PUBLIC_` |
 
 Until `DATABASE_URL` is set, `GET /health` returns `db: false` — this is expected.
 
 ## Deploy (later)
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the staging and production
-runbooks.
-
-- Web → Vercel (root `apps/web`)
-- API → Render (root `apps/api`)
+The hosting sections are being rewritten for the Docker/VPS target in phases
+8-12 of [docs/SUPABASE_REMOVAL_PLAN.md](docs/SUPABASE_REMOVAL_PLAN.md). See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the current environment variable
+reference and the clearly marked legacy hosting notes.
 
 ## Troubleshooting
 

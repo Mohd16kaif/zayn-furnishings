@@ -1,3 +1,7 @@
+# LEGACY: this Render layout has no database now that Supabase is removed. The
+# target deployment is Docker on a VPS (see docs/SUPABASE_REMOVAL_PLAN.md phases
+# 8-12). Kept only as a reference.
+#
 # Render Blueprint for the Zayn Furnishings API.
 #
 # IMPORTANT: A Render service's region cannot be changed after the service is
@@ -28,11 +32,9 @@ services:
         value: staging
       - key: DATABASE_URL
         sync: false
-      - key: SUPABASE_URL
+      - key: MEDIA_DIR
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: SUPABASE_ANON_KEY
+      - key: MEDIA_PUBLIC_BASE_URL
         sync: false
       - key: ADMIN_AUTH_SECRET
         sync: false

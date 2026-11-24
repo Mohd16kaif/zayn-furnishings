@@ -114,7 +114,7 @@ describe("image pipeline media storage wrapper", () => {
     });
   });
 
-  it("rethrows unexpected errors so Supabase SDK failures keep existing handling", async () => {
+  it("rethrows unexpected storage errors unchanged", async () => {
     state.put.mockRejectedValue(new Error("sdk failure"));
 
     await expect(

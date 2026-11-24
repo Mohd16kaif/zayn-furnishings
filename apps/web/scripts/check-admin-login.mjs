@@ -15,23 +15,6 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-function trackSupabaseRequests(context, sink) {
-  context.on("request", (request) => {
-    if (!request.url().toLowerCase().includes("supabase")) {
-      return;
-    }
-
-    if (request.method() === "GET" && request.resourceType() === "image") {
-      sink.storageImages.push(request.url());
-      return;
-    }
-
-    sink.violations.push(
-      `${request.method()} ${request.resourceType()} ${request.url()}`,
-    );
-  });
-}
-
 async function addAdminCookie(context) {
   await context.addCookies([
     {
@@ -58,12 +41,10 @@ async function assertLoginRedirect(page, path) {
 
 async function main() {
   const browser = await chromium.launch();
-  const sink = { violations: [], storageImages: [] };
   let failures = 0;
 
   try {
     const context = await browser.newContext();
-    trackSupabaseRequests(context, sink);
     await addAdminCookie(context);
 
     const meResponse = await context.request.get(
@@ -146,13 +127,11 @@ async function main() {
     console.log("/admin/products redirects to /admin/login after logout.");
 
     const anonymousContext = await browser.newContext();
-    trackSupabaseRequests(anonymousContext, sink);
     const anonymousPage = await anonymousContext.newPage();
     await assertLoginRedirect(anonymousPage, "/admin/products");
     console.log("/admin/products redirects to /admin/login without a cookie.");
 
     const invalidContext = await browser.newContext();
-    trackSupabaseRequests(invalidContext, sink);
     await invalidContext.addCookies([
       {
         name: "zf_admin_session",
@@ -168,22 +147,6 @@ async function main() {
     console.log(
       "/admin/products redirects to /admin/login with an invalid cookie.",
     );
-
-    assert.deepEqual(sink.violations, []);
-    console.log(
-      "Zero browser requests to hosts containing 'supabase' while browsing admin pages.",
-    );
-
-    if (sink.storageImages.length > 0) {
-      console.log(
-        `Storage image GETs (allowed until Phase 5): ${sink.storageImages.length}`,
-      );
-      for (const url of [...new Set(sink.storageImages)].slice(0, 10)) {
-        console.log(`  ${url}`);
-      }
-    } else {
-      console.log("Storage image GETs (allowed until Phase 5): 0");
-    }
   } catch (error) {
     failures += 1;
     console.error("FAIL: admin cookie-session check.");
