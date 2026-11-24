@@ -21,6 +21,7 @@ import {
   singleImageUploadLimiter,
   uploadImageObject,
 } from "../lib/imagePipeline";
+import { resolveMediaUrl } from "../lib/mediaUrls";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const categoryCreateSchema = z.object({
@@ -52,7 +53,10 @@ function serializeCategory(category: Category, productCount: number) {
     name: category.name,
     slug: category.slug,
     parent_id: category.parentId,
-    image_url: category.imageUrl,
+    image_url: resolveMediaUrl(
+      category.imageStoragePath,
+      category.imageUrl,
+    ),
     image_storage_path: category.imageStoragePath,
     description: category.description,
     sort_order: category.sortOrder,

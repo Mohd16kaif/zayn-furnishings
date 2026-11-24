@@ -103,6 +103,7 @@ staging and production projects use different values.
 | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | Web app mode; controls the STAGING banner and noindex | Set in Vercel | `staging` | `production` |
 | `NEXT_PUBLIC_API_URL` | API base URL used by the browser and server code | Render service URL | `<staging-api>` | `<production-api>` |
+| `NEXT_PUBLIC_MEDIA_BASE_URL` | Public origin that serves `/media` images through `next/image`; no path or trailing slash | The API's public origin; must equal the API's `MEDIA_PUBLIC_BASE_URL` | `<staging-api>` when the API uses `MEDIA_DRIVER=local` | `<production-api>` when the API uses `MEDIA_DRIVER=local` |
 | `NEXT_PUBLIC_SITE_URL` | Public web origin used for canonical links, the sitemap, and the admin same-origin check | Your domain | `<staging-web>` | `<production-web>` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase -> Project Settings -> API | Staging project URL | Production project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public key used by the browser | Supabase -> Project Settings -> API -> `anon` | Staging project key | Production project key |
@@ -115,6 +116,11 @@ Notes:
 - `STOREFRONT_API_KEY` must not be prefixed with `NEXT_PUBLIC_`. The browser
   must never see it.
 - `APPLE_PAY_DOMAIN_ASSOCIATION` must not be prefixed with `NEXT_PUBLIC_`.
+- `NEXT_PUBLIC_MEDIA_BASE_URL` is read at build time and inlined into the
+  `next/image` allow-list. When the API runs with `MEDIA_DRIVER=local`, set
+  the API's `MEDIA_DIR` and `MEDIA_PUBLIC_BASE_URL` and set this web variable
+  to the exact same origin (scheme, hostname, and port). It must not include a
+  path. With the current Supabase media driver it is not required.
 - After changing any Vercel environment variable, redeploy the project.
 - In the Vercel project settings, set the Root Directory to `apps/web`.
   "Include source files outside of the Root Directory in the Build Step" is on

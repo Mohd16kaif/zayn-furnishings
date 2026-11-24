@@ -894,23 +894,40 @@ real inbox (or the development log-only email sender).
 - Tests cover path validation and traversal, atomic writes and deletes, local
   disk guard, env validation, media route headers and 404/HEAD/405 behavior,
   mount-only-when-local, and the unchanged Supabase driver.
-- Phase 6 still owns the web side: `apps/web/next.config.ts` image host
-  settings and any `/media` rewrite are unchanged here. Local media URLs will
-  not render through the web image pipeline until Phase 6.
+- Phase 6 took the web side: `apps/web/next.config.ts` image host settings.
+  Local media URLs now render through the web image pipeline as described in
+  Phase 6 below.
 - Existing Supabase-hosted development images are disposable. A one-time copy
   script for them is NOT part of this phase.
 
-### Phase 6 - Web image URLs and Next config
+### Phase 6 - Web image URLs and Next config (done)
 
-- Choose relative `/media/...` URLs, or absolute API media URLs.
-- Remove the Supabase `remotePatterns` from `next.config.ts`.
-- Add the same-origin `/media` rewrite or reverse-proxy route if relative URLs
-  are used.
-- Update admin image previews and public pages only if the URL shape requires
-  it.
-- Tests: `next build`; product, category, and content images render in the
-  storefront and admin; no Supabase image host in built output; media cache
-  headers correct.
+- `apps/web/next.config.ts` now allows `next/image` to optimize the API media
+  origin from `NEXT_PUBLIC_MEDIA_BASE_URL` (exact protocol, hostname, and port;
+  pathname `/media/**`). Development defaults to `http://localhost:4000`.
+- The Supabase `remotePatterns` entry remains only when `SUPABASE_URL` (or the
+  current web setting `NEXT_PUBLIC_SUPABASE_URL`) is set, so Supabase-hosted
+  images keep working until Phase 7.
+- A bad or missing media URL never crashes the build. Staging and production
+  builds warn when `NEXT_PUBLIC_MEDIA_BASE_URL` is missing.
+- `images.dangerouslyAllowLocalIP` is enabled only when
+  `NODE_ENV !== "production"`, so local development can optimize
+  `http://localhost:4000/media/...` without enabling loopback access in
+  production or staging builds.
+- Added `apps/api/src/lib/mediaUrls.ts` (`resolveMediaUrl`). When
+  `MEDIA_DRIVER=local` and a valid `storage_path` exists, it rebuilds the URL
+  from `MEDIA_PUBLIC_BASE_URL`; otherwise it returns the stored URL unchanged.
+  It is used by public product, category, content, and search responses and by
+  the admin product, category, and content serializers. `storage_path` is not
+  added to public responses.
+- The storefront and admin keep using the existing `SmartImage`/`next/image`
+  components; no layout or styling changed.
+- Added `apps/api/tests/mediaUrls.test.ts` and
+  `apps/api/tests/publicMediaUrls.test.ts`, plus
+  `pnpm --filter web check:media-image`.
+- `NEXT_PUBLIC_MEDIA_BASE_URL` is documented in `apps/web/.env.example` and
+  `docs/DEPLOYMENT.md`. `render.yaml` is unchanged because this is a web
+  (Vercel) variable, not an API service variable.
 
 ### Phase 7 - Remove Supabase code, dependencies, and environment variables
 

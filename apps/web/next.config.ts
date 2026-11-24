@@ -1,18 +1,10 @@
 import type { NextConfig } from "next";
+import { buildMediaImageSettings } from "./scripts/media-image-config.mjs";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const mediaImages = buildMediaImageSettings(process.env);
 
-let supabaseProtocol: "http" | "https" = "https";
-let supabaseHostname: string | null = null;
-
-if (supabaseUrl) {
-  try {
-    const parsed = new URL(supabaseUrl);
-    supabaseProtocol = parsed.protocol === "http:" ? "http" : "https";
-    supabaseHostname = parsed.hostname;
-  } catch {
-    supabaseHostname = null;
-  }
+for (const warning of mediaImages.warnings) {
+  console.warn(`[next.config] ${warning}`);
 }
 
 const nextConfig: NextConfig = {
@@ -20,15 +12,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   images: {
-    remotePatterns: supabaseHostname
-      ? [
-          {
-            protocol: supabaseProtocol,
-            hostname: supabaseHostname,
-            pathname: "/storage/v1/object/public/product-images/**",
-          },
-        ]
-      : [],
+    remotePatterns: mediaImages.remotePatterns,
+    ...(mediaImages.dangerouslyAllowLocalIP
+      ? { dangerouslyAllowLocalIP: true }
+      : {}),
   },
   turbopack: {
     rules: {

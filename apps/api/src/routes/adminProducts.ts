@@ -44,6 +44,7 @@ import {
   processImage,
   uploadImageObject,
 } from "../lib/imagePipeline";
+import { primaryImagesByProduct } from "../lib/productImages";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const MAX_IMAGES_PER_PRODUCT = 10;
@@ -272,28 +273,10 @@ adminProductsRouter.get(
         .limit(page_size)
         .offset((page - 1) * page_size);
 
-      const productIds = rows.map((row) => row.product.id);
-      const primaryImageByProduct = new Map<string, string>();
-
-      if (productIds.length > 0) {
-        const imageRows = await db
-          .select({
-            productId: productImages.productId,
-            url: productImages.url,
-          })
-          .from(productImages)
-          .where(inArray(productImages.productId, productIds))
-          .orderBy(
-            asc(productImages.sortOrder),
-            asc(productImages.createdAt),
-          );
-
-        for (const image of imageRows) {
-          if (!primaryImageByProduct.has(image.productId)) {
-            primaryImageByProduct.set(image.productId, image.url);
-          }
-        }
-      }
+      const primaryImageByProduct = await primaryImagesByProduct(
+        db,
+        rows.map((row) => row.product.id),
+      );
 
       res.json({
         items: rows.map((row) =>

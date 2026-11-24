@@ -28,6 +28,7 @@ import {
   singleImageUploadLimiter,
   uploadImageObject,
 } from "../lib/imagePipeline";
+import { resolveMediaUrl } from "../lib/mediaUrls";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const TOKEN_ERROR =
@@ -132,7 +133,7 @@ function serializeContentBlock(block: ContentBlock) {
     title: block.title,
     subtitle: block.subtitle,
     body: block.body,
-    image_url: block.imageUrl,
+    image_url: resolveMediaUrl(block.storagePath, block.imageUrl),
     storage_path: block.storagePath,
     button_text: block.buttonText,
     link_url: block.linkUrl,

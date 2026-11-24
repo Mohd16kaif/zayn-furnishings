@@ -1,6 +1,7 @@
 import { asc, inArray } from "drizzle-orm";
 import { productImages } from "../db/schema";
 import type { Executor } from "./adminCatalog";
+import { resolveMediaUrl } from "./mediaUrls";
 
 export async function primaryImagesByProduct(
   executor: Executor,
@@ -16,6 +17,7 @@ export async function primaryImagesByProduct(
     .select({
       productId: productImages.productId,
       url: productImages.url,
+      storagePath: productImages.storagePath,
     })
     .from(productImages)
     .where(inArray(productImages.productId, productIds))
@@ -23,7 +25,10 @@ export async function primaryImagesByProduct(
 
   for (const row of rows) {
     if (!result.has(row.productId)) {
-      result.set(row.productId, row.url);
+      result.set(
+        row.productId,
+        resolveMediaUrl(row.storagePath, row.url) ?? row.url,
+      );
     }
   }
 

@@ -36,6 +36,7 @@ import {
   computeDeliveryQuote,
   type DeliveryZoneRow,
 } from "../lib/deliveryPricing";
+import { resolveMediaUrl } from "../lib/mediaUrls";
 import { primaryImagesByProduct } from "../lib/productImages";
 import {
   storefrontKeyMatches,
@@ -331,7 +332,10 @@ publicRouter.get(
           id: category.id,
           name: category.name,
           slug: category.slug,
-          image_url: category.imageUrl,
+          image_url: resolveMediaUrl(
+            category.imageStoragePath,
+            category.imageUrl,
+          ),
           description: category.description,
           sort_order: category.sortOrder,
           product_count: ownCount.get(category.id) ?? 0,
@@ -707,6 +711,7 @@ publicRouter.get(
         .select({
           id: productImages.id,
           url: productImages.url,
+          storagePath: productImages.storagePath,
           altText: productImages.altText,
           sortOrder: productImages.sortOrder,
         })
@@ -791,7 +796,7 @@ publicRouter.get(
         },
         images: images.map((image) => ({
           id: image.id,
-          url: image.url,
+          url: resolveMediaUrl(image.storagePath, image.url) ?? image.url,
           alt_text: image.altText,
           sort_order: image.sortOrder,
         })),
@@ -1051,6 +1056,7 @@ publicRouter.get(
           subtitle: contentBlocks.subtitle,
           body: contentBlocks.body,
           imageUrl: contentBlocks.imageUrl,
+          storagePath: contentBlocks.storagePath,
           buttonText: contentBlocks.buttonText,
           linkUrl: contentBlocks.linkUrl,
           sortOrder: contentBlocks.sortOrder,
@@ -1094,7 +1100,9 @@ publicRouter.get(
           title: block.title,
           subtitle: block.subtitle,
           body: block.body,
-          image_url: block.imageUrl,
+          image_url:
+            resolveMediaUrl(block.storagePath, block.imageUrl) ??
+            block.imageUrl,
           button_text: block.buttonText,
           link_url: block.linkUrl,
           sort_order: block.sortOrder,

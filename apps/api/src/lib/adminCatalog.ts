@@ -8,6 +8,7 @@ import {
   type Product,
   type ProductImage,
 } from "../db/schema";
+import { resolveMediaUrl } from "./mediaUrls";
 
 export type Database = PostgresJsDatabase<Record<string, never>>;
 export type Transaction = Parameters<
@@ -354,7 +355,7 @@ export function serializeProductImage(
   return {
     id: image.id,
     product_id: image.productId,
-    url: image.url,
+    url: resolveMediaUrl(image.storagePath, image.url) ?? image.url,
     storage_path: image.storagePath,
     alt_text: image.altText,
     sort_order: image.sortOrder,
