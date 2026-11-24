@@ -21,10 +21,17 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   images: {
     remotePatterns: mediaImages.remotePatterns,
+    localPatterns: mediaImages.localPatterns,
     ...(mediaImages.dangerouslyAllowLocalIP
       ? { dangerouslyAllowLocalIP: true }
       : {}),
   },
+  rewrites: async () => [
+    {
+      source: "/media/:path*",
+      destination: mediaImages.rewriteDestination,
+    },
+  ],
   turbopack: {
     rules: {
       "*.css": {

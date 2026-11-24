@@ -10,6 +10,7 @@ import {
   type AdminProduct,
   type ProductListResponse,
 } from "@/lib/adminApi";
+import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 import { formatCents } from "@/lib/money";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 
@@ -416,7 +417,7 @@ export function ProductsClient() {
                       <td className="px-4 py-3">
                         {product.primary_image_url ? (
                           <Image
-                            src={product.primary_image_url}
+                            src={resolveMediaImageSrc(product.primary_image_url) ?? product.primary_image_url}
                             alt={product.name}
                             width={48}
                             height={48}

@@ -3,6 +3,12 @@ import process from "node:process";
 
 export const DEV_MEDIA_ORIGIN = "http://localhost:4000";
 export const MEDIA_PATHNAME = "/media/**";
+export const LOCAL_IMAGE_PATTERNS = [
+  { pathname: MEDIA_PATHNAME, search: "" },
+  { pathname: "/images/**", search: "" },
+];
+const DEFAULT_INTERNAL_API_URL = "http://api:4000";
+const DEFAULT_DEV_API_URL = "http://localhost:4000";
 
 /**
  * @typedef {Object} RemotePattern
@@ -10,6 +16,7 @@ export const MEDIA_PATHNAME = "/media/**";
  * @property {string} hostname
  * @property {string} port
  * @property {string} pathname
+ * @property {string} [search]
  */
 
 /**
@@ -23,6 +30,39 @@ function envValue(env, key) {
   const value = env[key];
 
   return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Internal API origin used by the Next rewrite for /media/*. Rewrites are
+ * generated when the config is built, so Docker passes this as a build arg.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function buildInternalApiBase(env = process.env) {
+  const configured = envValue(env, "API_INTERNAL_URL");
+
+  if (configured) {
+    try {
+      const url = new URL(configured);
+
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        return configured.replace(/\/+$/, "");
+      }
+    } catch {
+      // Fall through to the environment default.
+    }
+  }
+
+  return envValue(env, "NEXT_OUTPUT") === "standalone"
+    ? DEFAULT_INTERNAL_API_URL
+    : DEFAULT_DEV_API_URL;
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function buildMediaRewriteDestination(env = process.env) {
+  return `${buildInternalApiBase(env)}/media/:path*`;
 }
 
 /**
@@ -119,11 +159,14 @@ export function buildMediaImageSettings(env = process.env) {
       hostname: mediaOrigin.hostname,
       port: mediaOrigin.port,
       pathname: MEDIA_PATHNAME,
+      search: "",
     });
   }
 
   return {
     remotePatterns,
+    localPatterns: LOCAL_IMAGE_PATTERNS,
+    rewriteDestination: buildMediaRewriteDestination(env),
     dangerouslyAllowLocalIP: envValue(env, "NODE_ENV") !== "production",
     mediaOrigin,
     warnings,

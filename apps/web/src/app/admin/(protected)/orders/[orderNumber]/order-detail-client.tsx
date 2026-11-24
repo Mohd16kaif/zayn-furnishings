@@ -38,6 +38,7 @@ import {
   refundReasonLabel,
 } from "@/lib/adminOrderLabels";
 import { notifyOrdersChanged } from "@/lib/adminOrderEvents";
+import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 import { formatCents } from "@/lib/money";
 import { RefundDialog } from "./refund-dialog";
 
@@ -882,7 +883,7 @@ export function OrderDetailClient({
                           <div className="flex items-start gap-3">
                             {item.image_url ? (
                               <Image
-                                src={item.image_url}
+                                src={resolveMediaImageSrc(item.image_url) ?? item.image_url}
                                 alt={item.name}
                                 width={56}
                                 height={56}

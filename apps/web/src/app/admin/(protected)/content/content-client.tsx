@@ -15,6 +15,7 @@ import {
   type AdminMe,
 } from "@/lib/adminApi";
 import { revalidateStorefront } from "@/lib/actions/revalidateStorefront";
+import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 import { CONTENT_TABS, contentLimit, contentTab } from "./content-config";
 import { ContentForm } from "./content-form";
 
@@ -439,7 +440,7 @@ export function ContentClient() {
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       {block.image_url ? (
                         <Image
-                          src={block.image_url}
+                          src={resolveMediaImageSrc(block.image_url) ?? block.image_url}
                           alt=""
                           width={96}
                           height={72}

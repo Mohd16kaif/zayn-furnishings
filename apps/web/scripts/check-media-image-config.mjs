@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import remotePatternModule from "next/dist/shared/lib/match-remote-pattern.js";
 import {
+  buildMediaRewriteDestination,
   buildMediaImageSettings,
   DEV_MEDIA_ORIGIN,
+  LOCAL_IMAGE_PATTERNS,
   MEDIA_PATHNAME,
 } from "./media-image-config.mjs";
+import { resolveMediaImageSrc } from "../src/lib/mediaImageSrc.ts";
 
 const { matchRemotePattern } = remotePatternModule;
 const IMAGE_PATH =
@@ -48,6 +51,43 @@ const dev = buildMediaImageSettings({ NODE_ENV: "development" });
 assert.equal(dev.warnings.length, 0, "dev default must not warn");
 assert.equal(dev.dangerouslyAllowLocalIP, true, "dev allows local IPs");
 assertMediaHost(dev, DEV_MEDIA_ORIGIN);
+assert.equal(mediaPattern(dev)?.search, "", "media queries are not allowed");
+assert.deepEqual(
+  dev.localPatterns,
+  LOCAL_IMAGE_PATTERNS,
+  "local patterns must allow only /media/** and /images/** without queries",
+);
+assert.deepEqual(dev.localPatterns, [
+  { pathname: "/media/**", search: "" },
+  { pathname: "/images/**", search: "" },
+]);
+assert.equal(
+  buildMediaRewriteDestination({ NODE_ENV: "development" }),
+  "http://localhost:4000/media/:path*",
+  "local dev must rewrite media to the local API",
+);
+assert.equal(
+  buildMediaRewriteDestination({ NODE_ENV: "production", NEXT_OUTPUT: "standalone" }),
+  "http://api:4000/media/:path*",
+  "standalone builds must default to the internal API service",
+);
+assert.equal(
+  buildMediaRewriteDestination({
+    NODE_ENV: "production",
+    NEXT_OUTPUT: "standalone",
+    API_INTERNAL_URL: "http://internal-api:4000/",
+  }),
+  "http://internal-api:4000/media/:path*",
+  "explicit internal API URL must be used and trailing slashes removed",
+);
+assert.equal(
+  allows(
+    dev,
+    `${DEV_MEDIA_ORIGIN}/media/${IMAGE_PATH}?v=1`,
+  ),
+  false,
+  "remote media patterns must reject query strings",
+);
 assert.equal(
   allows(dev, `${DEV_MEDIA_ORIGIN}/media/${IMAGE_PATH}`),
   true,
@@ -130,6 +170,19 @@ assert.equal(productionSet.dangerouslyAllowLocalIP, false);
 assertMediaHost(productionSet, "https://api.example.com");
 assert.equal(productionSet.warnings.length, 0);
 
+const standaloneSettings = buildMediaImageSettings({
+  NODE_ENV: "production",
+  NEXT_OUTPUT: "standalone",
+  NEXT_PUBLIC_MEDIA_BASE_URL: "https://api.example.com",
+  API_INTERNAL_URL: "http://api:4000",
+});
+
+assert.equal(
+  standaloneSettings.rewriteDestination,
+  "http://api:4000/media/:path*",
+  "standalone settings must bake the internal media rewrite",
+);
+
 const stagingMissing = buildMediaImageSettings({
   NODE_ENV: "development",
   NEXT_PUBLIC_APP_ENV: "staging",
@@ -172,6 +225,69 @@ assert.equal(
 );
 
 assert.doesNotThrow(() => buildMediaImageSettings({}));
+
+const originalNodeEnv = process.env.NODE_ENV;
+const originalMediaBaseUrl = process.env.NEXT_PUBLIC_MEDIA_BASE_URL;
+
+try {
+  process.env.NODE_ENV = "production";
+  process.env.NEXT_PUBLIC_MEDIA_BASE_URL = "https://shop.example.com";
+
+  assert.equal(
+    resolveMediaImageSrc(
+      `https://shop.example.com/media/${IMAGE_PATH}`,
+    ),
+    `/media/${IMAGE_PATH}`,
+    "matching absolute media URLs must become site-relative",
+  );
+  assert.equal(
+    resolveMediaImageSrc("/media/" + IMAGE_PATH),
+    `/media/${IMAGE_PATH}`,
+    "already-relative media URLs stay unchanged",
+  );
+  assert.equal(
+    resolveMediaImageSrc("/images/home/hero-1.jpg"),
+    "/images/home/hero-1.jpg",
+    "local public images stay unchanged",
+  );
+  assert.equal(
+    resolveMediaImageSrc(
+      `https://shop.example.com/media/${IMAGE_PATH}?v=1`,
+    ),
+    `https://shop.example.com/media/${IMAGE_PATH}?v=1`,
+    "media URLs with query strings stay unchanged",
+  );
+  assert.equal(
+    resolveMediaImageSrc(
+      `https://cdn.example.com/media/${IMAGE_PATH}`,
+    ),
+    `https://cdn.example.com/media/${IMAGE_PATH}`,
+    "foreign media hosts stay unchanged",
+  );
+  assert.equal(resolveMediaImageSrc(null), undefined);
+
+  process.env.NODE_ENV = "development";
+  delete process.env.NEXT_PUBLIC_MEDIA_BASE_URL;
+
+  assert.equal(
+    resolveMediaImageSrc(`http://localhost:4000/media/${IMAGE_PATH}`),
+    `/media/${IMAGE_PATH}`,
+    "development must convert the default local API media URL",
+  );
+} finally {
+  if (originalNodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = originalNodeEnv;
+  }
+
+  if (originalMediaBaseUrl === undefined) {
+    delete process.env.NEXT_PUBLIC_MEDIA_BASE_URL;
+  } else {
+    process.env.NEXT_PUBLIC_MEDIA_BASE_URL = originalMediaBaseUrl;
+  }
+}
+
 assert.equal(
   dev.remotePatterns.length,
   1,

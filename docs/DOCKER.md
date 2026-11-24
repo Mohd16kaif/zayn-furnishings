@@ -30,6 +30,7 @@ allows overrides from the current environment:
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | Public web origin |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | empty | Stripe publishable key |
 | `NEXT_PUBLIC_APP_ENV` | `development` | Web app mode (`development`, `staging`, `production`) |
+| `API_INTERNAL_URL` | `http://api:4000` | Internal API origin used by the baked `/media` rewrite; server-only, not a secret |
 
 Example with production values:
 
@@ -44,6 +45,11 @@ pnpm docker:build:web
 
 `NEXT_OUTPUT=standalone` is set only inside the web image build. Local
 `pnpm dev` and ordinary local `pnpm build` do not use standalone output.
+
+`API_INTERNAL_URL` is also used inside the web image to bake the `/media`
+rewrite. Next rewrites are generated at build time, so changing the internal
+API host requires rebuilding the web image. The same value is supplied at
+runtime for server-side API calls.
 
 ## Run the API
 
@@ -115,6 +121,7 @@ The web image runs as uid `1001`, defaults to `NODE_ENV=production`,
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
+| `API_INTERNAL_URL` | compose stack | Internal API origin for server-side calls; must match the build-time rewrite host |
 | `STOREFRONT_API_KEY` | when the API uses it | Server-only shared key; never a build argument |
 | `APPLE_PAY_DOMAIN_ASSOCIATION` | no | Server-only Apple Pay domain file contents |
 | `NODE_ENV` | image default `production` | Node mode |
@@ -159,6 +166,27 @@ same value for `api` and `web`; the example env file has one variable that feeds
 both. API and web use `read_only` root filesystems with small tmpfs mounts for
 `/tmp` (and the web `.next/cache`); media writes go to the `media` volume.
 
+### How images are served in the stack
+
+- The API still stores and returns absolute public media URLs built from
+  `MEDIA_PUBLIC_BASE_URL` (the edge origin).
+- `SmartImage` and the admin image components pass absolute media URLs through
+  `resolveMediaImageSrc()`. If the URL origin equals
+  `NEXT_PUBLIC_MEDIA_BASE_URL` and the path starts with `/media/`, it becomes a
+  site-relative `/media/<path>` with no query string.
+- `images.localPatterns` allows only `/media/**` and `/images/**` without query
+  strings. Next optimizes `/media/...` through `/_next/image`.
+- A Next rewrite proxies `/media/:path*` to `API_INTERNAL_URL` (the `api`
+  service inside Compose). This is only for the optimizer's internal fetch.
+- Caddy still routes browser requests for `/media/*` directly to the API. The
+  API media route, cache headers, and path validation are unchanged.
+- Non-Docker development keeps working: without `API_INTERNAL_URL`, the rewrite
+  targets `http://localhost:4000`, and absolute local media URLs are converted
+  to relative paths.
+- The remote `NEXT_PUBLIC_MEDIA_BASE_URL` pattern remains for non-Docker
+  setups that still use absolute URLs; production does not enable
+  `dangerouslyAllowLocalIP`.
+
 ### Initialize and run
 
 ```powershell
@@ -199,7 +227,7 @@ HSTS behavior.
 | `NEXT_PUBLIC_SITE_URL` | `.env.compose` | Build-time, public edge origin |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `.env.compose` | Build-time |
 | `NEXT_PUBLIC_APP_ENV` | `.env.compose` | Build-time |
-| `API_INTERNAL_URL` | Compose (`http://api:4000`) | Runtime, server-only |
+| `API_INTERNAL_URL` | Compose (`http://api:4000`) | Build-time rewrite destination and runtime server calls |
 | `STOREFRONT_API_KEY` | `.env.compose` | Runtime, server-only, shared with the API |
 | `APPLE_PAY_DOMAIN_ASSOCIATION` | `.env.compose` | Runtime, server-only |
 | `NODE_ENV` | `.env.compose` | Runtime |
@@ -250,6 +278,11 @@ developer's `zayn-furnishings-postgres-dev` container or the real `.env.compose`
   matching signing secret.
 - Same-origin checks: `NEXT_PUBLIC_SITE_URL` must equal the final public web
   origin used by the admin BFF, and Caddy must preserve the original Host.
+- Images behind Cloudflare: set `NEXT_PUBLIC_MEDIA_BASE_URL` and the API's
+  `MEDIA_PUBLIC_BASE_URL` to the public HTTPS edge origin. Media URLs become
+  relative and the optimizer fetches them through the internal Next rewrite to
+  `API_INTERNAL_URL`; do not enable `dangerouslyAllowLocalIP` in production.
+  Caddy continues to serve `/media/*` directly for browser requests.
 
 ## Logs
 

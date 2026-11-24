@@ -1007,6 +1007,15 @@ real inbox (or the development log-only email sender).
   secrets without printing them.
 - The compiled `dist/scripts/createOwner.js` entry exists and is documented
   for owner bootstrap.
+- Fixed broken stack images: absolute URLs on the public media origin are
+  converted to site-relative `/media/...` paths by one web helper, allowed by
+  `images.localPatterns` without query strings, and optimized through a baked
+  Next rewrite to `API_INTERNAL_URL` (`http://api:4000` in Compose). Caddy still
+  serves `/media/*` directly and the API media route is unchanged. The
+  production image does not enable `dangerouslyAllowLocalIP`.
+- Added `scripts/check-stack-images.mjs`, wired into the smoke test, which opens
+  admin products, the product page, category page, and home page in Playwright
+  and asserts real images load and no image request fails.
 - Tests: `pnpm docker:stack:smoke` passes through the edge: storefront,
   admin login page, robots, media 404, Stripe webhook 400, admin redirect,
   API public route not exposed, edge-only published port, non-root users,

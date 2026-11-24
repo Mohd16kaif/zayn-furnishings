@@ -9,6 +9,7 @@ import {
   AdminApiError,
   type AdminProductImage,
 } from "@/lib/adminApi";
+import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGES = 10;
@@ -412,7 +413,7 @@ export function ProductImages({
               >
                 <div className="relative bg-stone-100">
                   <Image
-                    src={image.url}
+                    src={resolveMediaImageSrc(image.url) ?? image.url}
                     alt={image.alt_text ?? "Product photo"}
                     width={400}
                     height={400}

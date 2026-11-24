@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { runStackImageChecks } from "./check-stack-images.mjs";
 import {
   createComposeEnvValues,
   randomAlphanumeric,
@@ -250,19 +251,6 @@ async function main() {
   const postgresContainer = serviceContainer("postgres");
   const migrateContainer = serviceContainer("migrate", true);
 
-  const edgeResponse = await fetchTimeout(`${EDGE}/`);
-  const edgeBody = await edgeResponse.text();
-  check(
-    "GET / through the edge returns 200",
-    edgeResponse.status === 200,
-    `HTTP ${edgeResponse.status}`,
-  );
-  check(
-    "Storefront HTML rendered",
-    edgeBody.includes("Zayn Furnishings") && edgeBody.includes("zf-nav"),
-    `${edgeBody.length} bytes`,
-  );
-
   const login = await fetchTimeout(`${EDGE}/admin/login`);
   check(
     "GET /admin/login through the edge returns 200",
@@ -433,6 +421,29 @@ async function main() {
     `HTTP ${me.status}`,
   );
 
+  const categoryResponse = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/categories`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: JSON.stringify({
+        name: `Stack smoke category ${suffix}`,
+        is_active: true,
+      }),
+    },
+  );
+  check(
+    "Throwaway category creation through the admin proxy succeeds",
+    categoryResponse.status === 201,
+    `HTTP ${categoryResponse.status}`,
+  );
+  const category = await categoryResponse.json();
+  const productName = `Stack smoke ${suffix}`;
+
   const productResponse = await fetchTimeout(
     `${EDGE}/api/admin-proxy/admin/products`,
     {
@@ -443,10 +454,11 @@ async function main() {
         cookie: adminCookie,
       },
       body: JSON.stringify({
-        name: `Stack smoke ${suffix}`,
+        name: productName,
         price_cents: 1234,
         sku: `STACK-${suffix}`,
-        status: "draft",
+        status: "active",
+        category_id: category.id,
       }),
     },
   );
@@ -514,6 +526,101 @@ async function main() {
     `HTTP ${imageResponse.status}, ${imageContentType}, nosniff=${imageNosniff || "missing"}`,
   );
 
+  const heroResponse = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/content`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: JSON.stringify({
+        type: "hero",
+        title: `Stack hero ${suffix}`,
+        is_active: false,
+      }),
+    },
+  );
+  check(
+    "Throwaway hero content creation succeeds",
+    heroResponse.status === 201,
+    `HTTP ${heroResponse.status}`,
+  );
+  const hero = await heroResponse.json();
+
+  const heroForm = new FormData();
+  heroForm.append(
+    "file",
+    new Blob([imageBytes], { type: "image/jpeg" }),
+    "hero-1.jpg",
+  );
+
+  const heroUpload = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/content/${hero.id}/image`,
+    {
+      method: "POST",
+      headers: {
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: heroForm,
+    },
+    30_000,
+  );
+  check(
+    "Throwaway hero image upload returns 201",
+    heroUpload.status === 201,
+    `HTTP ${heroUpload.status}`,
+  );
+
+  const heroActivate = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/content/${hero.id}`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        origin: EDGE,
+        cookie: adminCookie,
+      },
+      body: JSON.stringify({ is_active: true }),
+    },
+  );
+  check(
+    "Throwaway hero activation succeeds",
+    heroActivate.status === 200,
+    `HTTP ${heroActivate.status}`,
+  );
+
+  // Cache Components may have a build-time empty catalog cached. Let the
+  // storefront revalidate before the real-browser check so it sees this data.
+  console.log(
+    "Waiting for storefront cache revalidation before browser checks...",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 65_000));
+
+  const edgeResponse = await fetchTimeout(`${EDGE}/`);
+  const edgeBody = await edgeResponse.text();
+  check(
+    "GET / through the edge returns 200",
+    edgeResponse.status === 200,
+    `HTTP ${edgeResponse.status}`,
+  );
+  check(
+    "Storefront HTML rendered",
+    edgeBody.includes("Zayn Furnishings") && edgeBody.includes("zf-nav"),
+    `${edgeBody.length} bytes`,
+  );
+
+  await runStackImageChecks({
+    baseUrl: EDGE,
+    adminCookie,
+    productSlug: product.slug,
+    categorySlug: category.slug,
+    productName,
+  });
+  check("Real-browser stack image checks pass", true);
+
   const foreignOrigin = await fetchTimeout(
     `${EDGE}/api/admin-proxy/admin/products`,
     {
@@ -572,6 +679,32 @@ async function main() {
     "Deleted media file and empty product folder are gone",
     removed.stdout.trim() === "removed",
     "removed",
+  );
+
+  const deleteHero = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/content/${hero.id}`,
+    {
+      method: "DELETE",
+      headers: { origin: EDGE, cookie: adminCookie },
+    },
+  );
+  check(
+    "Throwaway hero deletion succeeds",
+    deleteHero.status === 200,
+    `HTTP ${deleteHero.status}`,
+  );
+
+  const deleteCategory = await fetchTimeout(
+    `${EDGE}/api/admin-proxy/admin/categories/${category.id}`,
+    {
+      method: "DELETE",
+      headers: { origin: EDGE, cookie: adminCookie },
+    },
+  );
+  check(
+    "Throwaway category deletion succeeds",
+    deleteCategory.status === 200,
+    `HTTP ${deleteCategory.status}`,
   );
 
   compose(["restart", "api"], { timeout: 120_000 });

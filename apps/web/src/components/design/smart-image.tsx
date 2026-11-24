@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 
 type SmartImageProps = {
   src?: string;
@@ -23,13 +24,14 @@ export function SmartImage({
   label = "Photo",
 }: SmartImageProps) {
   const [failed, setFailed] = useState(false);
-  const showImage = Boolean(src) && !failed;
+  const resolvedSrc = resolveMediaImageSrc(src);
+  const showImage = Boolean(resolvedSrc) && !failed;
 
   return (
     <div className={`zf-photo zf-photo--${tone} ${className}`.trim()}>
       {showImage ? (
         <Image
-          src={src as string}
+          src={resolvedSrc as string}
           alt={alt}
           fill
           sizes={sizes}

@@ -9,6 +9,7 @@ import {
   adminUpload,
 } from "@/lib/adminApi";
 import type { ToastKind } from "@/components/admin/admin-toast";
+import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -128,7 +129,7 @@ export function SingleImageUploader({
         <div className="overflow-hidden rounded-lg border border-stone-200">
           <div className="relative bg-stone-100">
             <Image
-              src={imageUrl}
+              src={resolveMediaImageSrc(imageUrl) ?? imageUrl}
               alt={alt}
               width={800}
               height={450}

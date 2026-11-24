@@ -26,9 +26,11 @@ ARG NEXT_PUBLIC_MEDIA_BASE_URL
 ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_APP_ENV
+ARG API_INTERNAL_URL=http://api:4000
 
 ENV NEXT_OUTPUT=standalone \
     NEXT_TELEMETRY_DISABLED=1 \
+    API_INTERNAL_URL=$API_INTERNAL_URL \
     NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_MEDIA_BASE_URL=$NEXT_PUBLIC_MEDIA_BASE_URL \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
@@ -65,6 +67,6 @@ USER zayn
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/admin/login').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
 CMD ["node", "apps/web/server.js"]

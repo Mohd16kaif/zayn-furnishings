@@ -11,6 +11,7 @@ const PUBLIC_BUILD_DEFAULTS = {
   NEXT_PUBLIC_SITE_URL: "http://localhost:3000",
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "",
   NEXT_PUBLIC_APP_ENV: "development",
+  API_INTERNAL_URL: "http://api:4000",
 };
 
 function runDocker(args) {
