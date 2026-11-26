@@ -138,6 +138,59 @@ services:
     networks:
       - stack
 
+  # One-shot encrypted backup of PostgreSQL and the media volume. It is behind
+  # the "backup" profile so it never starts with the stack. Run it with
+  # `pnpm docker:backup:run` or `docker compose --profile backup run --rm backup`.
+  # It joins the stack network only to reach PostgreSQL; it publishes no ports.
+  backup:
+    image: zayn-backup:stack
+    build:
+      context: .
+      dockerfile: deploy/backup/Dockerfile
+    profiles: ["backup"]
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/repo}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      # Stable restic host so retention groups snapshots across one-shot runs.
+      RESTIC_HOST: ${RESTIC_HOST:-zayn-stack}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-6}
+      BACKUP_READ_DATA_SUBSET: ${BACKUP_READ_DATA_SUBSET:-}
+      HEALTHCHECK_PING_URL: ${HEALTHCHECK_PING_URL:-}
+      BACKUP_STATUS_FILE: /status/last-backup.json
+      RESTIC_CACHE_DIR: /scratch/restic-cache
+      TMPDIR: /scratch/tmp
+      TZ: UTC
+    volumes:
+      # Media is read-only: a backup must never mutate the live volume.
+      - media:/data/media:ro
+      # The default local repository is a Docker volume, not an off-server copy.
+      - backup-repo:/repo
+      - backup-status:/status
+    tmpfs:
+      - "/scratch:uid=1001,gid=1001,mode=0700,size=1g"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    logging: *logging
+    networks:
+      - stack
+
   # Named tunnel. TUNNEL_TOKEN is required and is read from the environment so
   # it never appears on the cloudflared command line or in logs.
   tunnel-token-check:
@@ -232,6 +285,10 @@ services:
 volumes:
   pgdata:
   media:
+  # Development-only local restic repository. It is NOT an off-server backup.
+  backup-repo:
+  # Small JSON status file written after a successful backup.
+  backup-status:
 
 networks:
   stack:

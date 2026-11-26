@@ -232,6 +232,31 @@ async function waitForCaddyAccessLog(containerId, marker) {
   }, "Caddy access log entry for the tunnel probe", 15_000);
 }
 
+async function waitForCaddyErrorLog(containerId, marker) {
+  return waitFor(() => {
+    const logs = docker(["logs", containerId], {
+      allowFailure: true,
+    }).stdout;
+
+    for (const line of logs.split(/\r?\n/)) {
+      if (
+        !line.includes(marker) ||
+        !line.includes('"logger":"http.log.error')
+      ) {
+        continue;
+      }
+
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }, "Caddy error log entry for the upstream error probe", 15_000);
+}
+
 function webLogSummary(containerId) {
   const result = docker(["logs", containerId], {
     allowFailure: true,
@@ -1109,6 +1134,74 @@ async function main() {
     webLogs.errors.length === 0,
     `${webLogs.lines} lines checked, ${webLogs.errors.length} write errors`,
   );
+
+  const errorMarker = `/__error_probe_${suffix}`;
+  const errorUserAgent = `error-ua-${suffix}`;
+  const errorCookieValue = `error_cookie_value_${suffix}`;
+  const errorQueryValue = `error_query_${suffix}`;
+
+  compose(["stop", "web"], { timeout: 120_000 });
+
+  const errorProbeResponse = await fetchTimeout(
+    `${EDGE}${errorMarker}?token=${errorQueryValue}&code=999999`,
+    {
+      headers: {
+        "user-agent": errorUserAgent,
+        cookie: `error_cookie_${suffix}=${errorCookieValue}`,
+        referer: `https://error-referer-${suffix}.example/private`,
+        "cf-connecting-ip": "203.0.113.52",
+      },
+    },
+  );
+  check(
+    "Stopped web upstream makes the edge return 502",
+    errorProbeResponse.status === 502,
+    `HTTP ${errorProbeResponse.status}`,
+  );
+
+  const errorLog = await waitForCaddyErrorLog(caddyContainer, errorMarker);
+  const errorRequest = errorLog.request ?? {};
+  const serializedErrorLog = JSON.stringify(errorLog);
+  check(
+    "Caddy error log keeps the compact error fields",
+    typeof errorLog.logger === "string" &&
+      errorLog.logger.startsWith("http.log.error") &&
+      errorLog.level === "error" &&
+      typeof errorLog.msg === "string" &&
+      errorLog.msg.length > 0 &&
+      errorRequest.method === "GET" &&
+      typeof errorRequest.host === "string" &&
+      errorRequest.uri === errorMarker &&
+      errorRequest.remote_ip === gateway &&
+      errorRequest.client_ip === "203.0.113.52" &&
+      errorLog.status === 502 &&
+      typeof errorLog.duration === "number" &&
+      typeof errorLog.ts === "number",
+    `uri=${errorRequest.uri ?? "missing"}, status=${errorLog.status ?? "missing"}`,
+  );
+  check(
+    "Caddy error log drops headers, query strings, and bodies",
+    !("headers" in errorRequest) &&
+      !("remote_port" in errorRequest) &&
+      !("proto" in errorRequest) &&
+      !("tls" in errorRequest) &&
+      !("body" in errorRequest) &&
+      !("body_bytes_sent" in errorRequest) &&
+      !("resp_headers" in errorLog) &&
+      !("bytes_read" in errorLog) &&
+      !("user_id" in errorLog) &&
+      !("err_id" in errorLog) &&
+      !("err_trace" in errorLog) &&
+      !serializedErrorLog.includes(errorUserAgent) &&
+      !serializedErrorLog.includes(errorCookieValue) &&
+      !serializedErrorLog.includes(errorQueryValue) &&
+      !serializedErrorLog.includes("error-referer-"),
+    "headers, query, User-Agent, Cookie, and Referer absent from the error log",
+  );
+
+  compose(["start", "web"], { timeout: 120_000 });
+  await waitForHealthy(webContainer, "Web after error-log probe");
+  check("Web health recovers after the error-log probe", true);
 
   const foreignOrigin = await fetchTimeout(
     `${EDGE}/api/admin-proxy/admin/products`,

@@ -1095,14 +1095,71 @@ real inbox (or the development log-only email sender).
   live quick-tunnel round trip is not part of the offline smoke test.
 
 
-### Phase 11 - Backups and restore drill
+### Phase 11 - Backups and restore drill (done)
 
-- Add nightly `pg_dump -Fc` with retention, plus media backup, off-server
-  encrypted copy, and failure alerting.
-- Add a restore script and document the monthly restore test.
-- Tests: a dump restores into a scratch PostgreSQL 16 container; key table row
-  counts match; a sample media file restores and serves; a deliberately broken
-  dump triggers an alert; retention deletes only old files.
+- Added `deploy/backup/Dockerfile` on `postgres:16` with restic `0.18.0` from
+  the Debian package repository, plus `jq`, `curl`, and the OpenSSH client. The
+  entrypoint runs as uid/gid `1001` (`zaynbackup`) so it can read the API's
+  media files, and it asserts the `pg_dump`/server major versions before dumping.
+- Added a `backup` Compose service behind the `backup` profile. It mounts media
+  read-only, publishes no ports, drops all capabilities, sets
+  `no-new-privileges`, uses a read-only root with a `/scratch` tmpfs, joins the
+  stack network, rotates logs, and uses the stable `RESTIC_HOST=zayn-stack` for
+  retention grouping.
+- Added `deploy/backup/entrypoint.sh`: `pg_dump -Fc --no-owner --no-privileges`
+  verified with `pg_restore --list`; `restic backup` of the dump (`db`) and
+  media (`media`) with a shared `run-*` timestamp tag; `restic forget --prune`
+  with `BACKUP_KEEP_DAILY`/`WEEKLY`/`MONTHLY`; metadata `restic check` plus an
+  optional `--read-data-subset` deep check; a no-secrets status file on the
+  `backup-status` volume; a one-line summary; loud non-zero failure with the
+  step name; and optional success/`/fail` `HEALTHCHECK_PING_URL` pings.
+- Added `RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_*`, retention, deep-check,
+  and healthcheck variables to `.env.compose.example`. Init generates a long
+  random `RESTIC_PASSWORD` for new env files and refuses to rewrite an existing
+  file, printing a reminder when the backup variables are missing. `.env.compose`
+  is not backed up; the docs state that losing `RESTIC_PASSWORD` makes every
+  backup unreadable and that it must be kept in the client's password manager
+  with an offline copy.
+- The default development repository is the `backup-repo` Docker volume
+  (`/repo`), clearly marked not off-server. S3-compatible and sftp repositories
+  are supported by restic; real provider behavior and costs remain unverified.
+- Added `pnpm docker:backup:run`, `pnpm docker:backup:list`,
+  `pnpm docker:restore`, and `pnpm docker:backup:drill`
+  (`scripts/docker-backup.mjs`, `scripts/docker-restore.mjs`, and
+  `scripts/docker-backup-drill.mjs`). `docker:backup:run` refuses unless the
+  stack is up and both restic values are set. Restore defaults to a fresh
+  PostgreSQL container and fresh media volume; the db dump is restored with the
+  same role bootstrap and `pg_restore --no-owner --clean --if-exists`.
+  `--into-live` requires the typed word `RESTORE-LIVE` and stopped `api`/`web`
+  containers.
+- Added `docs/BACKUPS.md` in plain language: what is and is not backed up,
+  encryption and password storage, repository options and unverified costs,
+  retention, commands, the lost-server restore runbook, the monthly drill, and
+  Phase 12 systemd notes. Updated `docs/DOCKER.md`, `.gitignore`, and
+  `.dockerignore` (`backups/`), and added the new package scripts. No migration
+  files changed.
+- Tests: `pnpm docker:backup:drill` uses throwaway project `zayn-drill` with a
+  temp env file and local repository. It brings up the stack, migrates, seeds,
+  creates an owner, logs in through the edge, creates an active product, uploads
+  `hero-1.jpg`, records every table's row count, the migration count, and the
+  media sha256; runs two backups and checks the shared `db`/`media` tags,
+  deduplication, and retention; deletes the live product row and media file;
+  restores into a fresh PostgreSQL container and fresh media volume; compares
+  all row counts, the migration count, and the media sha256; starts the API
+  against the restored data and checks `/health db:true`, the public product,
+  and the media URL (`200 image/webp`); tests a wrong `RESTIC_PASSWORD`, an
+  unreachable repository, a pg_dump/server major mismatch, and a corrupted pack
+  file; asserts no secret appears in captured output or the status file; and
+  inspects the backup container for non-root, read-only media, dropped
+  capabilities, `no-new-privileges`, read-only root, and no published ports. It
+  removes every container, network, volume, and temp env file even on failure.
+- Fixed Caddy error-log leakage: the global `log default` block now drops
+  request headers, cookies, query strings, bodies, remote port, protocol, TLS
+  details, response headers, `bytes_read`, `user_id`, `err_id`, and `err_trace`
+  from `http.log.error`, keeping timestamp, level, message/error text, method,
+  host, path-only URI, status, duration, remote IP, and client IP. The smoke
+  test stops the web container briefly, forces a 502 with fake
+  User-Agent/Cookie/Referer/query, and asserts the error log is redacted.
 
 ### Phase 12 - Legacy cleanup and VPS runbook
 

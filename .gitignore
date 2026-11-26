@@ -24,6 +24,9 @@ apps/api/media-data/
 # Email preview output
 apps/api/tmp-email-preview/
 
+# Local backup repository/status data (never commit backups or their secrets)
+backups/
+
 # Logs
 *.log
 npm-debug.log*

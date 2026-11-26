@@ -1,8 +1,10 @@
 # Docker images and stack
 
-Phase 8 builds two production-style images, Phase 9 adds the Compose stack, and
-Phase 10 adds Cloudflare Tunnel profiles and HTTPS-aware edge behavior. There is
-no registry push in these phases.
+Phase 8 builds two production-style images, Phase 9 adds the Compose stack,
+Phase 10 adds Cloudflare Tunnel profiles and HTTPS-aware edge behavior, and
+Phase 11 adds encrypted restic backups and a restore drill. There is no registry
+push in these phases. Backup operations are documented in
+[BACKUPS.md](./BACKUPS.md).
 
 - `zayn-api:local`: the Express API from `apps/api`, built with TypeScript and
   run with Node. It serves `/media` from a writable `/data/media` volume.
@@ -160,6 +162,7 @@ edge port:
 | `api` | API image. Reaches PostgreSQL by service name, writes `/data/media` on the `media` volume, and is not published to the host. |
 | `web` | Next standalone image. Server code uses `API_INTERNAL_URL=http://api:4000`; browser-facing values stay on `NEXT_PUBLIC_*`. Not published to the host. |
 | `edge` | Caddy 2.11.9. The only published port: `127.0.0.1:${EDGE_HOST_PORT:-8080}:80`. Routes `/media/*` and `/webhooks/stripe` to the API and everything else to the web app. |
+| `backup` | Optional, profile `backup`. One-shot restic backup of PostgreSQL and the read-only `media` volume. No published ports, non-root, `cap_drop: ALL`, `no-new-privileges`, read-only root with a `/scratch` tmpfs. Not started by default. |
 | `tunnel` | Optional, profile `tunnel`. `cloudflare/cloudflared:2026.11.2` runs a named Cloudflare Tunnel from `TUNNEL_TOKEN`. No published ports. |
 | `quicktunnel` | Optional, profile `quicktunnel`. The same cloudflared image runs an anonymous quick tunnel to `http://edge:80`. Testing only. |
 | `tunnel-token-check` | One-shot profile `tunnel` guard that fails with a clear message when `TUNNEL_TOKEN` is empty. It never prints the token. |
@@ -229,9 +232,13 @@ pnpm docker:stack:up
 ```
 
 `.env.compose` is ignored by Git and Docker. `docker:stack:init` generates
-random alphanumeric `POSTGRES_PASSWORD`, `ADMIN_AUTH_SECRET`, and
-`STOREFRONT_API_KEY` values and never prints them. The password is alphanumeric
-so it can be embedded directly in `DATABASE_URL` without URL escaping.
+random alphanumeric `POSTGRES_PASSWORD`, `ADMIN_AUTH_SECRET`,
+`STOREFRONT_API_KEY`, and `RESTIC_PASSWORD` values and never prints them. The
+database password is alphanumeric so it can be embedded directly in
+`DATABASE_URL` without URL escaping. If an existing `.env.compose` is missing
+`RESTIC_PASSWORD` or `RESTIC_REPOSITORY`, init refuses to rewrite it and prints a
+one-line reminder; add the values manually and store `RESTIC_PASSWORD` in the
+client's password manager.
 
 Create the owner admin (the compiled entry exists in the API image):
 
@@ -383,6 +390,56 @@ cloudflared connects outbound to Cloudflare. A VPS with only IPv6 outbound may
 need `TUNNEL_EDGE_IP_VERSION=auto` or `6` in `.env.compose`, and outbound
 TCP/UDP 7844 must be allowed. This was not tested on an IPv6-only VPS.
 
+### Backups (Phase 11)
+
+The full developer and owner guide is [BACKUPS.md](./BACKUPS.md). The key
+points for the stack:
+
+- The `backup` service is behind the `backup` profile and never starts with
+  `docker:stack:up`. It is built from `deploy/backup/Dockerfile` on
+  `postgres:16` (so `pg_dump` is major version 16 and matches the server) and
+  installs restic `0.18.0` from the Debian package repository. The entrypoint
+  asserts the `pg_dump` and server major versions at runtime.
+- The media volume is mounted `:ro`. The container runs as uid/gid `1001`
+  (`zaynbackup`) because the API writes media as `1001:1001`. It drops all
+  capabilities, sets `no-new-privileges`, uses a read-only root with a
+  `/scratch` tmpfs, and publishes no ports.
+- `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` are required in `.env.compose`.
+  The default local `RESTIC_REPOSITORY=/repo` is the `backup-repo` Docker
+  volume and is **not** an off-server backup. Use an S3-compatible bucket or
+  sftp for real backups. S3 credentials use `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION`.
+- Losing `RESTIC_PASSWORD` makes every backup unreadable. Store it in the
+  client's password manager and keep an offline copy. `.env.compose` is not
+  included in backups.
+- `BACKUP_KEEP_DAILY` (default `7`), `BACKUP_KEEP_WEEKLY` (`4`), and
+  `BACKUP_KEEP_MONTHLY` (`6`) control `restic forget --prune`. The newest
+  snapshot is always kept. `RESTIC_HOST` defaults to `zayn-stack` so one-shot
+  runs share a retention group.
+- `BACKUP_READ_DATA_SUBSET` is optional. When set (for example `5%` or `1/10`)
+  the script also runs `restic check --read-data-subset`. The metadata
+  `restic check` always runs.
+- The status file is written to the `backup-status` volume at
+  `/status/last-backup.json` and contains no secrets. An optional
+  `HEALTHCHECK_PING_URL` is pinged after success and with `/fail` after a
+  failure; the URL is never printed.
+- Commands:
+
+  ```powershell
+  pnpm docker:backup:run
+  pnpm docker:backup:list
+  pnpm docker:restore
+  pnpm docker:backup:drill
+  ```
+
+`docker:backup:run` refuses unless the stack is up and the two restic values are
+set. `docker:restore` restores into a fresh PostgreSQL container and a fresh
+media volume by default. `--into-live` additionally requires the typed word
+`RESTORE-LIVE` and stopped `api`/`web` containers.
+
+The project volumes are now `zayn_pgdata`, `zayn_media`, `zayn_backup-repo`,
+and `zayn_backup-status`.
+
 ### Build-time vs runtime for the web image
 
 | Variable | Compose source | When |
@@ -408,7 +465,9 @@ pnpm docker:stack:reset -- --yes  # remove containers and volumes
 `docker:stack:down` and `docker:stack:reset` pass both tunnel profiles, so
 named and quick tunnel containers are removed too. `docker:stack:reset` refuses
 to remove volumes without `--yes`. The project name is `zayn`, so the named
-volumes are `zayn_pgdata` and `zayn_media`.
+volumes are `zayn_pgdata`, `zayn_media`, `zayn_backup-repo`, and
+`zayn_backup-status`. Removing the backup volumes deletes the local backup
+repository; remote repositories are unaffected.
 
 ### What is exposed
 
@@ -451,7 +510,10 @@ restart, and zero `Failed to update prerender cache` / `EROFS` / `ENOENT` /
 `EACCES` lines in the web logs. The Caddy access-log check sends a fake
 User-Agent, Cookie, Referer, and query string and asserts that none of them
 appear, that all headers are absent, that the path-only `uri` is logged, and
-that loopback healthchecks are skipped. The smoke removes all of its containers,
+that loopback healthchecks are skipped. It also stops the web container briefly
+to force a 502, sends a request with a fake User-Agent, Cookie, Referer, and
+query string, and asserts that the `http.log.error` line keeps only the compact
+error fields and none of those values. The smoke removes all of its containers,
 networks, volumes, and the temp env file even on failure, and never touches the
 developer's `zayn-furnishings-postgres-dev` container or the real `.env.compose`.
 
@@ -478,6 +540,16 @@ is added by Caddy's logging core and cannot be filtered. All request and
 response headers are dropped, so User-Agent, Cloudflare headers, Cookie,
 Set-Cookie, Referer, and Authorization never appear. Caddy's own loopback
 healthcheck requests are skipped with `log_skip`.
+
+Caddy error logs (logger name starts with `http.log.error`, for example
+`http.log.error.log0`) used to include the full request, including headers. The
+global `log default` block in `deploy/Caddyfile` now drops request
+headers, bodies, remote port, protocol, TLS details, response headers,
+`bytes_read`, `user_id`, `err_id`, and `err_trace`, and strips the query string
+from `request.uri`. An upstream error therefore keeps only timestamp, level,
+logger, message/error text, method, host, path-only URI, status, duration,
+remote IP, and client IP. Caddy's logging core adds `logger` and it cannot be
+filtered.
 
 Visitor IPs are personal data. Retention is the Docker `json-file` log rotation
 configured on the services (`3` files of `10` MB each). The privacy policy must

@@ -27,6 +27,7 @@ coverage
 # Local media and generated artifacts
 apps/api/media-data
 apps/api/tmp-email-preview
+backups
 docs/screenshots
 apps/web/docs/screenshots
 _originals

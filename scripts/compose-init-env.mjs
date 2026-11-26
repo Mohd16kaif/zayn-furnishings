@@ -1,9 +1,10 @@
 import { randomInt } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { hasComposeEnvKey } from "./compose-env.mjs";
 
 export const REPO_ROOT = path.resolve(
   fileURLToPath(new URL("..", import.meta.url)),
@@ -58,6 +59,16 @@ export function createComposeEnvValues(overrides = {}) {
     TWILIO_AUTH_TOKEN: "",
     TWILIO_VERIFY_SERVICE_SID: "",
     APPLE_PAY_DOMAIN_ASSOCIATION: "",
+    RESTIC_REPOSITORY: "/repo",
+    RESTIC_PASSWORD: randomAlphanumeric(64),
+    AWS_ACCESS_KEY_ID: "",
+    AWS_SECRET_ACCESS_KEY: "",
+    AWS_DEFAULT_REGION: "",
+    BACKUP_KEEP_DAILY: "7",
+    BACKUP_KEEP_WEEKLY: "4",
+    BACKUP_KEEP_MONTHLY: "6",
+    BACKUP_READ_DATA_SUBSET: "",
+    HEALTHCHECK_PING_URL: "",
     ...overrides,
   };
 }
@@ -115,6 +126,18 @@ const isDirectRun =
 if (isDirectRun) {
   try {
     if (existsSync(ENV_PATH)) {
+      const existing = readFileSync(ENV_PATH, "utf8");
+      const missingBackupKeys = [
+        "RESTIC_REPOSITORY",
+        "RESTIC_PASSWORD",
+      ].filter((key) => !hasComposeEnvKey(existing, key));
+
+      if (missingBackupKeys.length > 0) {
+        console.error(
+          `.env.compose is missing ${missingBackupKeys.join(", ")}. Add them manually; the file was not changed. RESTIC_PASSWORD encrypts every backup, so store it in the client's password manager: losing it makes all backups unreadable.`,
+        );
+      }
+
       console.error(
         ".env.compose already exists. Refusing to overwrite it; remove it manually first.",
       );

@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { ENV_PATH } from "./compose-init-env.mjs";
+import { readComposeEnvFile } from "./compose-env.mjs";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const COMPOSE_FILE = "docker-compose.stack.yml";
@@ -99,42 +100,6 @@ const PUBLIC_ORIGIN_KEYS = [
   "MEDIA_PUBLIC_BASE_URL",
 ];
 
-/** Reads only simple KEY=value pairs. Values are never logged. */
-function readComposeEnv() {
-  const values = new Map();
-
-  try {
-    const text = readFileSync(ENV_PATH, "utf8");
-
-    for (const line of text.split(/\r?\n/)) {
-      if (line.trimStart().startsWith("#")) {
-        continue;
-      }
-
-      const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
-
-      if (!match) {
-        continue;
-      }
-
-      let value = match[2];
-
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-
-      values.set(match[1], value);
-    }
-  } catch {
-    // The caller reports a missing file before this point.
-  }
-
-  return values;
-}
-
 function publicOriginProblem(value) {
   if (!value) {
     return "unset";
@@ -167,7 +132,7 @@ function publicOriginProblem(value) {
 }
 
 function tunnelWarnings() {
-  const values = readComposeEnv();
+  const values = readComposeEnvFile(ENV_PATH);
   const problems = PUBLIC_ORIGIN_KEYS.map((key) => [
     key,
     publicOriginProblem(values.get(key) ?? ""),
@@ -264,7 +229,7 @@ async function up(profile) {
       profile === "tunnel" &&
       !(
         process.env.TUNNEL_TOKEN?.trim() ||
-        (readComposeEnv().get("TUNNEL_TOKEN") ?? "").trim()
+        (readComposeEnvFile(ENV_PATH).get("TUNNEL_TOKEN") ?? "").trim()
       )
     ) {
       throw new Error(

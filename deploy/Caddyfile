@@ -29,6 +29,31 @@
 		trusted_proxies_strict
 		client_ip_headers CF-Connecting-IP X-Forwarded-For
 	}
+
+	# Error logs (http.log.error) are emitted outside the access-log directive.
+	# Redact the same sensitive request parts there: no headers (User-Agent,
+	# Cookie, Authorization, Referer), no bodies, no query string, no remote
+	# port. The logger field itself cannot be filtered by Caddy.
+	log default {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				request>body delete
+				request>body_bytes_sent delete
+				request>remote_port delete
+				request>proto delete
+				request>tls delete
+				request>uri regexp "\?.*$" ""
+				resp_headers delete
+				bytes_read delete
+				user_id delete
+				err_id delete
+				err_trace delete
+			}
+		}
+	}
 }
 
 (proxy_headers) {
