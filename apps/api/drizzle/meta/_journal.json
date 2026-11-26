@@ -78,6 +78,13 @@
       "when": 1795428768870,
       "tag": "0010_admin_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795688658507,
+      "tag": "0011_bulk_price_changes",
+      "breakpoints": true
     }
   ]
 }

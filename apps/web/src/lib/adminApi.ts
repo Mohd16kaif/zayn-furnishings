@@ -408,3 +408,114 @@ export async function adminUpload<T>(
     request.send(formData);
   });
 }
+
+export type AdminPriceChangeMode =
+  | "percent_increase"
+  | "percent_decrease"
+  | "amount_increase"
+  | "amount_decrease";
+
+export type AdminPriceChangeScope =
+  | { type: "all" }
+  | {
+      type: "category";
+      category_id: string;
+      include_children: boolean;
+    };
+
+export type AdminPriceChangeParams = {
+  scope: AdminPriceChangeScope;
+  statuses: Array<"active" | "draft" | "archived">;
+  mode: AdminPriceChangeMode;
+  value: number;
+  apply_to: "regular" | "sale" | "both";
+  rounding: "none" | "nearest_dollar" | "end_99" | "end_00_up";
+};
+
+export type AdminPriceChangeRow = {
+  product_id: string;
+  name: string;
+  category_id: string | null;
+  product_status: "active" | "draft" | "archived";
+  old_price_cents: number;
+  old_sale_price_cents: number | null;
+  new_price_cents: number;
+  new_sale_price_cents: number | null;
+  status: "ok" | "unchanged" | "blocked";
+  reason: string | null;
+};
+
+export type AdminPriceChangeCounts = {
+  ok: number;
+  unchanged: number;
+  blocked: number;
+};
+
+export type AdminPriceChangeTotals = {
+  okCount: number;
+  oldRegularCents: number;
+  newRegularCents: number;
+  regularDifferenceCents: number;
+  oldSaleCents: number;
+  newSaleCents: number;
+  saleDifferenceCents: number;
+};
+
+export type AdminPriceChangePreview = {
+  rows: AdminPriceChangeRow[];
+  counts: AdminPriceChangeCounts;
+  totals: AdminPriceChangeTotals;
+  preview_token: string;
+};
+
+export type AdminPriceChangeApplied = {
+  id: string;
+  created_at: string;
+  item_count: number;
+  undone_at: string | null;
+  counts: AdminPriceChangeCounts;
+  totals: AdminPriceChangeTotals;
+  summary: string;
+};
+
+export type AdminPriceChangeSummary = {
+  id: string;
+  created_at: string;
+  item_count: number;
+  undone_at: string | null;
+  admin: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  };
+  undone_by: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  } | null;
+  params: unknown;
+  summary: string;
+};
+
+export type AdminPriceChangeDetail = {
+  batch: AdminPriceChangeSummary;
+  items: Array<{
+    id: string;
+    product_id: string;
+    product_name: string | null;
+    old_price_cents: number;
+    old_sale_price_cents: number | null;
+    new_price_cents: number;
+    new_sale_price_cents: number | null;
+  }>;
+};
+
+export type AdminPriceChangeUndoResult = {
+  restored_count: number;
+  skipped_count: number;
+  skipped: Array<{
+    product_id: string;
+    product_name: string | null;
+    reason: string;
+  }>;
+};

@@ -7,12 +7,14 @@ import {
   adminFetch,
   AdminApiError,
   type AdminCategory,
+  type AdminMe,
   type AdminProduct,
   type ProductListResponse,
 } from "@/lib/adminApi";
 import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 import { formatCents } from "@/lib/money";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { PriceChangePanel } from "./price-change-panel";
 
 const inputClass =
   "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10";
@@ -62,6 +64,30 @@ export function ProductsClient() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmProduct, setConfirmProduct] =
     useState<AdminProduct | null>(null);
+  const [role, setRole] = useState<AdminMe["role"] | null>(null);
+  const [pricePanelOpen, setPricePanelOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRole() {
+      try {
+        const me = await adminFetch<AdminMe>("/admin/me");
+
+        if (!cancelled) {
+          setRole(me.role);
+        }
+      } catch {
+        // Owner-only tools stay hidden if the role cannot be loaded.
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -245,12 +271,23 @@ export function ProductsClient() {
             US dollars.
           </p>
         </div>
-        <Link
-          href="/admin/products/new"
-          className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
-        >
-          Add product
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {role === "owner" ? (
+            <button
+              type="button"
+              onClick={() => setPricePanelOpen(true)}
+              className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+            >
+              Change prices
+            </button>
+          ) : null}
+          <Link
+            href="/admin/products/new"
+            className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
+          >
+            Add product
+          </Link>
+        </div>
       </div>
 
       <div aria-live="polite" className="mt-4 space-y-2">
@@ -558,6 +595,17 @@ export function ProductsClient() {
           }
         }}
       />
+
+      {pricePanelOpen ? (
+        <PriceChangePanel
+          open
+          categories={categories}
+          onClose={() => setPricePanelOpen(false)}
+          onChanged={() => {
+            void loadProducts();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { adminContentRouter } from "./routes/adminContent";
 import { adminDashboardRouter } from "./routes/adminDashboard";
 import { adminDeliveryZonesRouter } from "./routes/adminDeliveryZones";
 import { adminOrdersRouter } from "./routes/adminOrders";
+import { adminPriceChangesRouter } from "./routes/adminPriceChanges";
 import { adminProductsRouter } from "./routes/adminProducts";
 import { adminSettingsRouter } from "./routes/adminSettings";
 import { activePhoneVerifierName } from "./lib/phoneVerifier";
@@ -69,6 +70,7 @@ app.use("/admin", adminDeliveryZonesRouter);
 app.use("/admin", adminOrdersRouter);
 app.use("/admin", adminDashboardRouter);
 app.use("/admin", adminProductsRouter);
+app.use("/admin", adminPriceChangesRouter);
 
 if (adminAuthSecretIsDevFallback) {
   console.warn(

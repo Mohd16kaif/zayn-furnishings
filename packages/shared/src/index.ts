@@ -2,6 +2,7 @@ export * from "./appEnv";
 export * from "./public";
 export * from "./delivery";
 export * from "./pricing";
+export * from "./bulkPriceChange";
 export * from "./phone";
 export * from "./tokens";
 export * from "./zipCoverage";

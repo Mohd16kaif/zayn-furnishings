@@ -14,4 +14,5 @@ export * from "./schema/adminAuth";
 export * from "./schema/inventory";
 export * from "./schema/notifications";
 export * from "./schema/audit";
+export * from "./schema/priceChanges";
 export * from "./schema/relations";
