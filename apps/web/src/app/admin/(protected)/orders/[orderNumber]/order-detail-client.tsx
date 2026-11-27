@@ -41,6 +41,7 @@ import { notifyOrdersChanged } from "@/lib/adminOrderEvents";
 import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 import { formatCents } from "@/lib/money";
 import { RefundDialog } from "./refund-dialog";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -395,6 +396,7 @@ export function OrderDetailClient({
   const [resendTarget, setResendTarget] =
     useState<AdminOrderMessage | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const inFlight = useInFlightGuard();
 
   const load = useCallback(
     async (options: { quiet?: boolean } = {}) => {
@@ -453,6 +455,10 @@ export function OrderDetailClient({
   }, [load]);
 
   async function changeStatus(target: AdminOrderStatus) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmTarget(null);
     setSavingStatus(true);
 
@@ -491,6 +497,7 @@ export function OrderDetailClient({
         await load({ quiet: true });
       }
     } finally {
+      inFlight.end();
       setSavingStatus(false);
     }
   }
@@ -503,6 +510,10 @@ export function OrderDetailClient({
       setDeliveryError(
         "Choose a delivery method before saving the delivery.",
       );
+      return;
+    }
+
+    if (!inFlight.begin()) {
       return;
     }
 
@@ -559,6 +570,7 @@ export function OrderDetailClient({
         await load({ quiet: true });
       }
     } finally {
+      inFlight.end();
       setSavingDelivery(false);
       setDeliveryConfirmStatus(null);
     }
@@ -570,6 +582,10 @@ export function OrderDetailClient({
     const text = noteText.trim();
 
     if (!text) {
+      return;
+    }
+
+    if (!inFlight.begin()) {
       return;
     }
 
@@ -599,6 +615,7 @@ export function OrderDetailClient({
         ),
       );
     } finally {
+      inFlight.end();
       setSavingNote(false);
     }
   }
@@ -615,6 +632,10 @@ export function OrderDetailClient({
     setResendTarget(null);
 
     if (!message.template) {
+      return;
+    }
+
+    if (!inFlight.begin()) {
       return;
     }
 
@@ -653,6 +674,7 @@ export function OrderDetailClient({
         await load({ quiet: true });
       }
     } finally {
+      inFlight.end();
       setResendingId(null);
     }
   }

@@ -10,6 +10,7 @@ import {
   type AdminProductImage,
 } from "@/lib/adminApi";
 import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGES = 10;
@@ -57,6 +58,7 @@ export function ProductImages({
   const [uploadError, setUploadError] = useState("");
   const [notice, setNotice] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const inFlight = useInFlightGuard();
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) {
@@ -120,6 +122,10 @@ export function ProductImages({
       return;
     }
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     const formData = new FormData();
 
     for (const file of allowed) {
@@ -153,6 +159,7 @@ export function ProductImages({
         errorMessage(error, "Unable to upload the photos. Please try again."),
       );
     } finally {
+      inFlight.end();
       setUploading(false);
       setUploadProgress(null);
       if (inputRef.current) {
@@ -162,6 +169,10 @@ export function ProductImages({
   }
 
   async function persistOrder(next: AdminProductImage[]) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setReordering(true);
     setUploadError("");
     setNotice("");
@@ -184,6 +195,7 @@ export function ProductImages({
         errorMessage(error, "Unable to reorder the photos. Please try again."),
       );
     } finally {
+      inFlight.end();
       setReordering(false);
     }
   }
@@ -224,6 +236,10 @@ export function ProductImages({
       return;
     }
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setSavingAltId(image.id);
     setAltErrors((previous) => {
       const next = { ...previous };
@@ -257,11 +273,16 @@ export function ProductImages({
         ),
       }));
     } finally {
+      inFlight.end();
       setSavingAltId(null);
     }
   }
 
   async function removeImage(image: AdminProductImage) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmImage(null);
     setBusyImageId(image.id);
     setUploadError("");
@@ -285,6 +306,7 @@ export function ProductImages({
         errorMessage(error, "Unable to delete the photo. Please try again."),
       );
     } finally {
+      inFlight.end();
       setBusyImageId(null);
     }
   }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/adminApi";
 import type { ToastKind } from "@/components/admin/admin-toast";
 import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -45,6 +46,7 @@ export function SingleImageUploader({
   const [error, setError] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const inFlight = useInFlightGuard();
 
   async function handleFiles(fileList: FileList | null) {
     const file = fileList?.[0];
@@ -60,6 +62,10 @@ export function SingleImageUploader({
 
     if (file.size > MAX_BYTES) {
       setError("This photo is larger than 8 MB.");
+      return;
+    }
+
+    if (!inFlight.begin()) {
       return;
     }
 
@@ -87,6 +93,7 @@ export function SingleImageUploader({
       setError(message);
       onToast("error", message);
     } finally {
+      inFlight.end();
       setUploading(false);
       setProgress(0);
       if (inputRef.current) {
@@ -96,6 +103,10 @@ export function SingleImageUploader({
   }
 
   async function removeImage() {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmRemove(false);
     setError("");
     setUploading(true);
@@ -117,6 +128,7 @@ export function SingleImageUploader({
       setError(message);
       onToast("error", message);
     } finally {
+      inFlight.end();
       setUploading(false);
     }
   }

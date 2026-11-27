@@ -71,6 +71,8 @@ vi.mock("../src/lib/reconcileOrderPayment", () => ({
 
 import { ordersRouter } from "../src/routes/orders";
 
+const IDEMPOTENCY_KEY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
 const orderBody = {
   items: [
     {
@@ -123,7 +125,10 @@ describe("POST /api/orders while the store is closed", () => {
   it("rejects order creation with 503 and a plain-language message", async () => {
     const response = await fetch(`${baseUrl}/api/orders`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": IDEMPOTENCY_KEY,
+      },
       body: JSON.stringify(orderBody),
     });
     const body = (await response.json()) as { error: string };
@@ -137,7 +142,10 @@ describe("POST /api/orders while the store is closed", () => {
 
     const response = await fetch(`${baseUrl}/api/orders`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": IDEMPOTENCY_KEY,
+      },
       body: JSON.stringify(orderBody),
     });
     const body = (await response.json()) as { error: string };

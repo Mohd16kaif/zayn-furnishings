@@ -24,6 +24,7 @@ import {
   type DeliveryResult,
 } from "@/lib/deliveryClient";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -70,6 +71,7 @@ export function DeliveryClient() {
   const [testResult, setTestResult] = useState<DeliveryResult | null>(
     null,
   );
+  const inFlight = useInFlightGuard();
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -140,6 +142,10 @@ export function DeliveryClient() {
   }
 
   async function toggleActive(zone: AdminDeliveryZone) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setBusy(true);
     setActionError("");
     setNotice("");
@@ -162,11 +168,16 @@ export function DeliveryClient() {
           : "Unable to update the delivery zone.",
       );
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }
 
   async function deleteZone(zone: AdminDeliveryZone) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmZone(null);
     setBusy(true);
     setActionError("");
@@ -185,6 +196,7 @@ export function DeliveryClient() {
           : "Unable to delete the delivery zone.",
       );
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }
@@ -210,10 +222,15 @@ export function DeliveryClient() {
       return;
     }
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setTestBusy(true);
     const outcome = await requestDelivery(zip, subtotalCents);
     setTestResult(outcome.result);
     setTestError(outcome.error);
+    inFlight.end();
     setTestBusy(false);
   }
 
@@ -605,6 +622,7 @@ function ZoneForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(
     {},
   );
+  const inFlight = useInFlightGuard();
 
   const customFreeOverCents = dollarsToCents(freeOverDollars);
   const customFreeDiffers =
@@ -614,7 +632,6 @@ function ZoneForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaving(true);
     setError("");
     setFieldErrors({});
 
@@ -667,6 +684,12 @@ function ZoneForm({
       is_active: isActive,
     };
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
+    setSaving(true);
+
     try {
       if (zone) {
         await adminFetch(`/admin/delivery-zones/${zone.id}`, {
@@ -691,6 +714,7 @@ function ZoneForm({
           : "Unable to save the delivery zone.",
       );
     } finally {
+      inFlight.end();
       setSaving(false);
     }
   }

@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import type { SessionCustomer } from "@/lib/customer";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 import { useCustomer } from "@/components/design/customer-provider";
 
 type SignInProps = {
@@ -63,6 +64,7 @@ export function SignIn({
   const [devMode, setDevMode] = useState(false);
   const phoneRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const inFlight = useInFlightGuard();
 
   useEffect(() => {
     if (step !== "code" || cooldown <= 0) {
@@ -93,7 +95,7 @@ export function SignIn({
   async function startVerification(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
 
-    if (busy) {
+    if (busy || !inFlight.begin()) {
       return;
     }
 
@@ -155,6 +157,7 @@ export function SignIn({
         "We could not reach sign-in. Check your connection and try again.",
       );
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }
@@ -162,7 +165,7 @@ export function SignIn({
   async function verify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (busy) {
+    if (busy || !inFlight.begin()) {
       return;
     }
 
@@ -238,6 +241,7 @@ export function SignIn({
         "We could not reach sign-in. Check your connection and try again.",
       );
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }

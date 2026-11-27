@@ -12,6 +12,7 @@ import {
   type CustomerOrderList,
 } from "@/lib/orderTypes";
 import { useCustomer } from "@/components/design/customer-provider";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 function OrderRows({ list }: { list: CustomerOrderList }) {
   return (
@@ -54,6 +55,7 @@ export function AccountClient({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const inFlight = useInFlightGuard();
 
   async function loadPage(page: number) {
     if (busy) {
@@ -81,12 +83,13 @@ export function AccountClient({
   }
 
   async function onSignOut() {
-    if (signingOut) {
+    if (signingOut || !inFlight.begin()) {
       return;
     }
 
     setSigningOut(true);
     const ok = await signOut();
+    inFlight.end();
 
     if (ok) {
       router.refresh();

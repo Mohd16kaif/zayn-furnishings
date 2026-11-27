@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const RESEND_SECONDS = 30;
 const RATE_LIMIT_MESSAGE =
@@ -24,6 +25,7 @@ export function LoginForm({
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const inFlight = useInFlightGuard();
 
   useEffect(() => {
     if (resendIn <= 0) {
@@ -38,6 +40,10 @@ export function LoginForm({
   }, [resendIn]);
 
   async function requestCode(address: string, isResend = false) {
+    if (loading || !inFlight.begin()) {
+      return;
+    }
+
     setLoading(true);
     setError("");
     setStatus("");
@@ -74,6 +80,7 @@ export function LoginForm({
           : "We could not send a code. Please try again.",
       );
     } finally {
+      inFlight.end();
       setLoading(false);
     }
   }
@@ -92,6 +99,11 @@ export function LoginForm({
 
   async function handleVerify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (loading || !inFlight.begin()) {
+      return;
+    }
+
     setError("");
     setStatus("");
 
@@ -130,6 +142,7 @@ export function LoginForm({
           ? verifyFailure.message
           : "We could not sign you in. Please try again.",
       );
+      inFlight.end();
       setLoading(false);
     }
   }

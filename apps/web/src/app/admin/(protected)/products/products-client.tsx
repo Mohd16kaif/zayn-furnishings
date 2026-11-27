@@ -13,6 +13,7 @@ import {
 } from "@/lib/adminApi";
 import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
 import { formatCents } from "@/lib/money";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { PriceChangePanel } from "./price-change-panel";
 
@@ -66,6 +67,7 @@ export function ProductsClient() {
     useState<AdminProduct | null>(null);
   const [role, setRole] = useState<AdminMe["role"] | null>(null);
   const [pricePanelOpen, setPricePanelOpen] = useState(false);
+  const inFlight = useInFlightGuard();
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +201,10 @@ export function ProductsClient() {
   }, [categories]);
 
   async function duplicateProduct(product: AdminProduct) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setBusyId(product.id);
     setActionError("");
     setNotice("");
@@ -216,11 +222,16 @@ export function ProductsClient() {
           : "Unable to duplicate the product.",
       );
     } finally {
+      inFlight.end();
       setBusyId(null);
     }
   }
 
   async function deleteProduct(product: AdminProduct) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmProduct(null);
     setBusyId(product.id);
     setActionError("");
@@ -239,6 +250,7 @@ export function ProductsClient() {
           : "Unable to delete the product.";
       setActionError(message);
     } finally {
+      inFlight.end();
       setBusyId(null);
     }
   }

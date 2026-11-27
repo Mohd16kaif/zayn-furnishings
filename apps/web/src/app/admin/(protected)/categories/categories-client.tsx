@@ -14,6 +14,7 @@ import {
   type AdminCategory,
 } from "@/lib/adminApi";
 import { revalidateStorefront } from "@/lib/actions/revalidateStorefront";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10";
@@ -34,6 +35,7 @@ export function CategoriesClient() {
   const [confirmCategory, setConfirmCategory] =
     useState<AdminCategory | null>(null);
   const { toast, showToast, dismissToast } = useAdminToast();
+  const inFlight = useInFlightGuard();
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -133,6 +135,10 @@ export function CategoriesClient() {
     const next = [...siblings];
     [next[index], next[target]] = [next[target], next[index]];
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setBusy(true);
 
     try {
@@ -154,11 +160,16 @@ export function CategoriesClient() {
           : "Unable to reorder categories.",
       );
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }
 
   async function deleteCategory(category: AdminCategory) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmCategory(null);
     setBusy(true);
 
@@ -177,6 +188,7 @@ export function CategoriesClient() {
           : "Unable to delete the category.",
       );
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }
@@ -387,6 +399,7 @@ function CategoryForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const inFlight = useInFlightGuard();
 
   const hasChildren = editing
     ? categories.some((item) => item.parent_id === editing.id)
@@ -398,6 +411,11 @@ function CategoryForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setSaving(true);
     setError("");
     setFieldErrors({});
@@ -436,6 +454,7 @@ function CategoryForm({
           : "Unable to save the category.",
       );
     } finally {
+      inFlight.end();
       setSaving(false);
     }
   }

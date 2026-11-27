@@ -46,6 +46,7 @@ export async function callApi(
     token?: string | null;
     visitorIp?: string | null;
     body?: unknown;
+    headers?: Record<string, string>;
     timeoutMs?: number;
   } = {},
 ): Promise<Response> {
@@ -59,6 +60,10 @@ export async function callApi(
 
   if (options.body !== undefined) {
     headers["Content-Type"] = "application/json";
+  }
+
+  if (options.headers) {
+    Object.assign(headers, options.headers);
   }
 
   return fetch(`${apiBaseUrl()}${path}`, {
@@ -85,6 +90,7 @@ export async function callApiWithSession(
     method?: "GET" | "POST";
     visitorIp?: string | null;
     body?: unknown;
+    headers?: Record<string, string>;
     timeoutMs?: number;
   } = {},
 ): Promise<{ response: Response | null; authenticated: boolean }> {

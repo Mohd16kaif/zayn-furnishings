@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import type { AdminMe } from "@/lib/adminApi";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const navItems: Array<{ label: string; href: string }> = [
   { label: "Dashboard", href: "/admin" },
@@ -30,8 +31,13 @@ export function AdminShell({
   const router = useRouter();
   const pathname = usePathname();
   const [loggingOut, setLoggingOut] = useState(false);
+  const inFlight = useInFlightGuard();
 
   async function handleLogout() {
+    if (loggingOut || !inFlight.begin()) {
+      return;
+    }
+
     setLoggingOut(true);
 
     try {
@@ -43,6 +49,7 @@ export function AdminShell({
     } catch {
       // The redirect still needs to happen if the request fails.
     } finally {
+      inFlight.end();
       router.replace("/admin/login");
     }
   }

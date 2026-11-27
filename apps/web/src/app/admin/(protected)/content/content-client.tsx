@@ -16,6 +16,7 @@ import {
 } from "@/lib/adminApi";
 import { revalidateStorefront } from "@/lib/actions/revalidateStorefront";
 import { resolveMediaImageSrc } from "@/lib/mediaImageSrc";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 import { CONTENT_TABS, contentLimit, contentTab } from "./content-config";
 import { ContentForm } from "./content-form";
 
@@ -104,6 +105,7 @@ export function ContentClient() {
     useState<AdminContentBlock | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const { toast, showToast, dismissToast } = useAdminToast();
+  const inFlight = useInFlightGuard();
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -167,6 +169,10 @@ export function ContentClient() {
   }
 
   async function toggleVisibility(block: AdminContentBlock) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setBusyId(block.id);
 
     try {
@@ -196,6 +202,7 @@ export function ContentClient() {
           : "Unable to update the visibility.",
       );
     } finally {
+      inFlight.end();
       setBusyId(null);
     }
   }
@@ -206,6 +213,10 @@ export function ContentClient() {
     const target = index + direction;
 
     if (index < 0 || target < 0 || target >= siblings.length) {
+      return;
+    }
+
+    if (!inFlight.begin()) {
       return;
     }
 
@@ -243,11 +254,16 @@ export function ContentClient() {
           : "Unable to update the order.",
       );
     } finally {
+      inFlight.end();
       setBusyId(null);
     }
   }
 
   async function deleteBlock(block: AdminContentBlock) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setConfirmBlock(null);
     setBusyId(block.id);
 
@@ -268,6 +284,7 @@ export function ContentClient() {
           : "Unable to delete the content.",
       );
     } finally {
+      inFlight.end();
       setBusyId(null);
     }
   }

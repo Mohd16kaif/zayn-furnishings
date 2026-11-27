@@ -18,6 +18,7 @@ import {
 } from "@/lib/adminMoney";
 import { revalidateStorefront } from "@/lib/actions/revalidateStorefront";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -45,6 +46,7 @@ export function SettingsClient() {
   const [storeOpen, setStoreOpen] = useState(false);
   const [storeOpenSaving, setStoreOpenSaving] = useState(false);
   const [confirmOpenStore, setConfirmOpenStore] = useState(false);
+  const inFlight = useInFlightGuard();
 
   const applySettings = useCallback((data: AdminStoreSettings) => {
     setSettings(data);
@@ -109,6 +111,10 @@ export function SettingsClient() {
       return;
     }
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setSaving(true);
     setNotice("");
     setActionError("");
@@ -124,6 +130,7 @@ export function SettingsClient() {
           free_delivery_threshold_cents:
             "Enter a dollar amount, or choose No free delivery.",
         });
+        inFlight.end();
         setSaving(false);
         return;
       }
@@ -158,11 +165,16 @@ export function SettingsClient() {
           : "Unable to save settings.",
       );
     } finally {
+      inFlight.end();
       setSaving(false);
     }
   }
 
   async function persistStoreOpen(next: boolean) {
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setStoreOpenSaving(true);
     setNotice("");
     setActionError("");
@@ -191,6 +203,7 @@ export function SettingsClient() {
           : "Unable to change the store status.",
       );
     } finally {
+      inFlight.end();
       setStoreOpenSaving(false);
       setConfirmOpenStore(false);
     }

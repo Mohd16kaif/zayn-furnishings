@@ -95,6 +95,12 @@ const checks = [
     script: path.join(WEB_ROOT, "scripts", "check-checkout.mjs"),
     requiresToken: false,
   },
+  {
+    name: "idempotency",
+    cwd: REPO_ROOT,
+    script: path.join(REPO_ROOT, "scripts", "check-idempotency.mjs"),
+    requiresToken: true,
+  },
 ];
 
 console.log(`Running server-based checks against ${BASE_URL}`);

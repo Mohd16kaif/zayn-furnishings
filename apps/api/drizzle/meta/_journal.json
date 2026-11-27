@@ -85,6 +85,13 @@
       "when": 1795688658507,
       "tag": "0011_bulk_price_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795786479765,
+      "tag": "0012_glorious_marvex",
+      "breakpoints": true
     }
   ]
 }

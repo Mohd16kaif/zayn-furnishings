@@ -11,7 +11,7 @@
     "dev": "pnpm --filter @zayn/shared build && concurrently -n web,api -c cyan,magenta \"pnpm --filter web dev\" \"pnpm --filter @zayn/api dev\"",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm --filter @zayn/shared build && pnpm -r --if-present test",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:price-change": "node scripts/check-price-change.mjs",
     "check:e2e": "node scripts/check-e2e.mjs",

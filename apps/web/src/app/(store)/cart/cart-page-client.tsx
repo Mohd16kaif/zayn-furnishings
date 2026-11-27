@@ -28,6 +28,7 @@ import {
   subscribeZipCookie,
 } from "@/lib/deliveryClient";
 import { formatCents } from "@/lib/money";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const MAX_QUANTITY = MAX_ORDER_QTY;
 
@@ -72,6 +73,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
   const [zipValue, setZipValue] = useState("");
   const [zipBusy, setZipBusy] = useState(false);
   const [zipEditing, setZipEditing] = useState(false);
+  const inFlight = useInFlightGuard();
 
   const activeZipForRequest = zip ?? savedZip;
 
@@ -282,6 +284,10 @@ export function CartPageClient({ categories }: CartPageClientProps) {
       return;
     }
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setZip(next);
     setZipEditing(false);
     setZipBusy(true);
@@ -291,6 +297,7 @@ export function CartPageClient({ categories }: CartPageClientProps) {
 
     setDeliveryError(outcome.error);
     setZipValue(next);
+    inFlight.end();
     setZipBusy(false);
     setAnnouncement(
       outcome.result?.available

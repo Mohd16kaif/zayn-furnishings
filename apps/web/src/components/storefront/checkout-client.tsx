@@ -25,6 +25,8 @@ import {
   subscribeZipCookie,
 } from "@/lib/deliveryClient";
 import { formatCents } from "@/lib/money";
+import { getOrCreateOrderIdempotencyKey } from "@/lib/orderIdempotency";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 import type { CartValidation } from "@/lib/publicApi";
 import { US_STATES } from "@/lib/usStates";
 import { SignIn } from "./sign-in";
@@ -113,7 +115,10 @@ export function CheckoutClient() {
   const [summaryOpen, setSummaryOpen] = useState(true);
 
   const orderRef = useRef<CreatedOrder | null>(null);
+  const creatingOrderRef = useRef(false);
   const autoZipRef = useRef<string | null>(null);
+  const signOutGuard = useInFlightGuard();
+  const discountGuard = useInFlightGuard();
 
   useEffect(() => {
     orderRef.current = order;
@@ -351,6 +356,10 @@ export function CheckoutClient() {
       return;
     }
 
+    if (!discountGuard.begin()) {
+      return;
+    }
+
     setApplyingDiscount(true);
     setDiscountError("");
 
@@ -424,6 +433,7 @@ export function CheckoutClient() {
         "We could not check that code. Please try again.",
       );
     } finally {
+      discountGuard.end();
       setApplyingDiscount(false);
     }
   }
@@ -449,7 +459,7 @@ export function CheckoutClient() {
   }
 
   async function onContinueToPayment() {
-    if (creatingOrder) {
+    if (creatingOrder || creatingOrderRef.current) {
       return;
     }
 
@@ -529,32 +539,59 @@ export function CheckoutClient() {
       return;
     }
 
+    if (creatingOrderRef.current) {
+      return;
+    }
+
+    const checkoutPayload = {
+      items: items.map((item) => ({
+        product_id: item.productId,
+        quantity: item.quantity,
+      })),
+      zip: address.zip,
+      email: email.trim(),
+      shipping_address: {
+        name: address.name.trim(),
+        line1: address.line1.trim(),
+        line2: address.line2.trim() || undefined,
+        city: address.city.trim(),
+        state: address.state,
+        zip: address.zip,
+      },
+      ...(appliedDiscount
+        ? { discount_code: appliedDiscount.code }
+        : {}),
+      sms_opt_in: smsOptIn,
+    };
+
+    let idempotencyKey: string;
+
+    try {
+      idempotencyKey = getOrCreateOrderIdempotencyKey({
+        items: checkoutPayload.items,
+        zip: checkoutPayload.zip,
+        email: checkoutPayload.email,
+        shipping_address: checkoutPayload.shipping_address,
+        discount_code: appliedDiscount?.code,
+      });
+    } catch {
+      setOrderError(
+        "This browser cannot start a secure payment. Please try another browser.",
+      );
+      return;
+    }
+
+    creatingOrderRef.current = true;
     setCreatingOrder(true);
 
     try {
       const response = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((item) => ({
-            product_id: item.productId,
-            quantity: item.quantity,
-          })),
-          zip: address.zip,
-          email: email.trim(),
-          shipping_address: {
-            name: address.name.trim(),
-            line1: address.line1.trim(),
-            line2: address.line2.trim() || undefined,
-            city: address.city.trim(),
-            state: address.state,
-            zip: address.zip,
-          },
-          ...(appliedDiscount
-            ? { discount_code: appliedDiscount.code }
-            : {}),
-          sms_opt_in: smsOptIn,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(checkoutPayload),
       });
       const data: unknown = await response.json().catch(() => null);
 
@@ -568,18 +605,32 @@ export function CheckoutClient() {
         }
 
         if (response.status === 409) {
-          const unavailable =
+          const unavailableValue =
             typeof data === "object" &&
             data !== null &&
-            Array.isArray((data as { unavailable?: unknown }).unavailable)
-              ? ((data as {
-                  unavailable: Array<{ name?: unknown }>;
-                }).unavailable
-                  .map((entry) =>
-                    typeof entry.name === "string" ? entry.name : null,
-                  )
-                  .filter((name): name is string => Boolean(name)))
-              : [];
+            (data as { unavailable?: unknown }).unavailable;
+
+          if (!Array.isArray(unavailableValue)) {
+            const message =
+              typeof data === "object" &&
+              data !== null &&
+              typeof (data as { error?: unknown }).error === "string"
+                ? (data as { error: string }).error
+                : "This checkout can no longer be paid. Please start again.";
+
+            setOrderError(message);
+            return;
+          }
+
+          const unavailable = unavailableValue
+            .map((entry) =>
+              typeof entry === "object" &&
+              entry !== null &&
+              typeof (entry as { name?: unknown }).name === "string"
+                ? (entry as { name: string }).name
+                : null,
+            )
+            .filter((name): name is string => Boolean(name));
 
           setStockIssues(unavailable);
           setOrderError(
@@ -648,12 +699,13 @@ export function CheckoutClient() {
         "We could not reach the checkout service. Check your connection and try again.",
       );
     } finally {
+      creatingOrderRef.current = false;
       setCreatingOrder(false);
     }
   }
 
   async function onSignOut() {
-    if (signingOut) {
+    if (signingOut || !signOutGuard.begin()) {
       return;
     }
 
@@ -665,6 +717,7 @@ export function CheckoutClient() {
       setContactError("Sign-out failed. Please try again.");
     }
 
+    signOutGuard.end();
     setSigningOut(false);
   }
 

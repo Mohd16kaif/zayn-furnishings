@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { CloseIcon } from "./icons";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const ZIP_COOKIE = "zf-zip";
 
@@ -48,6 +49,7 @@ export function ZipControl() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const inFlight = useInFlightGuard();
   const savedZip = useSyncExternalStore(
     subscribeCookie,
     getZipSnapshot,
@@ -92,6 +94,10 @@ export function ZipControl() {
       return;
     }
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setBusy(true);
 
     try {
@@ -123,6 +129,7 @@ export function ZipControl() {
     } catch {
       setNote("Sorry, we could not check that ZIP. Please try again.");
     } finally {
+      inFlight.end();
       setBusy(false);
     }
   }

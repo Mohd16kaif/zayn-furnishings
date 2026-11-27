@@ -10,6 +10,7 @@ import {
 import { AdminApiError, adminFetch } from "@/lib/adminApi";
 import { REFUND_REASON_OPTIONS } from "@/lib/adminOrderLabels";
 import { formatCents } from "@/lib/money";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -84,6 +85,7 @@ export function RefundDialog({
   const amountId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [requestId] = useState(() => newRequestId());
+  const inFlight = useInFlightGuard();
   const [mode, setMode] = useState<RefundMode>("full");
   const [amountInput, setAmountInput] = useState("");
   const [reason, setReason] =
@@ -130,7 +132,7 @@ export function RefundDialog({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!canSubmit) {
+    if (!canSubmit || !inFlight.begin()) {
       return;
     }
 
@@ -158,6 +160,7 @@ export function RefundDialog({
     } catch (refundError) {
       setError(friendlyRefundError(refundError));
     } finally {
+      inFlight.end();
       setSaving(false);
     }
   }

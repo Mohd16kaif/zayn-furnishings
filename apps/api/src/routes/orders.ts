@@ -6,11 +6,14 @@ import {
   calculateOrderTotals,
   calculateTaxCents,
   evaluateDiscountCode,
+  isUuidV4,
+  ORDER_IDEMPOTENCY_KEY_HEADER,
   zipMatchesState,
   type DiscountIneligibilityReason,
+  type OrderIdempotencyFingerprintInput,
 } from "@zayn/shared";
 import { z } from "zod";
-import { db } from "../db/client";
+import { db, type Database } from "../db/client";
 import {
   customers,
   deliveries,
@@ -19,12 +22,17 @@ import {
   orders,
   payments,
   products,
+  type Order,
   type Product,
 } from "../db/schema";
 import { sendValidationError } from "../lib/adminCatalog";
 import { serializeCustomerDelivery } from "../lib/customerOrderSerialization";
 import { requireCustomer } from "../lib/customerAuth";
 import { computeDeliveryQuote } from "../lib/deliveryPricing";
+import {
+  computeOrderIdempotencyFingerprint,
+  isUniqueViolation,
+} from "../lib/orderIdempotency";
 import { primaryImagesByProduct } from "../lib/productImages";
 import { reconcileOrderPayment } from "../lib/reconcileOrderPayment";
 import { STRIPE_API_VERSION, stripe } from "../lib/stripe";
@@ -158,6 +166,157 @@ type CreatePaymentIntentParams = Stripe.PaymentIntentCreateParams & {
   payment_method_types: string[];
 };
 
+const IDEMPOTENCY_POLL_INTERVAL_MS = 200;
+const IDEMPOTENCY_POLL_ATTEMPTS = 25;
+
+function orderResponse(order: Order, clientSecret: string) {
+  return {
+    order_number: order.orderNumber,
+    client_secret: clientSecret,
+    total_cents: order.totalCents,
+    breakdown: {
+      subtotal_cents: order.subtotalCents,
+      discount_cents: order.discountCents,
+      delivery_fee_cents: order.deliveryFeeCents,
+      tax_cents: order.taxCents,
+      total_cents: order.totalCents,
+      discount_code: order.discountCode,
+    },
+  };
+}
+
+async function findOrderByIdempotencyKey(
+  database: Database,
+  customerId: string,
+  idempotencyKey: string,
+): Promise<Order | null> {
+  const [order] = await database
+    .select()
+    .from(orders)
+    .where(
+      and(
+        eq(orders.customerId, customerId),
+        eq(orders.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .limit(1);
+
+  return order ?? null;
+}
+
+async function findOrderById(
+  database: Database,
+  orderId: string,
+): Promise<Order | null> {
+  const [order] = await database
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  return order ?? null;
+}
+
+async function waitForPaymentIntent(
+  database: Database,
+  orderId: string,
+): Promise<Order | null> {
+  let latest: Order | null = null;
+
+  for (let attempt = 0; attempt < IDEMPOTENCY_POLL_ATTEMPTS; attempt += 1) {
+    latest = await findOrderById(database, orderId);
+
+    if (!latest || latest.status !== "pending" || latest.stripePaymentIntentId) {
+      return latest;
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, IDEMPOTENCY_POLL_INTERVAL_MS),
+    );
+  }
+
+  return latest;
+}
+
+async function replayOrder(
+  database: Database,
+  initialOrder: Order,
+  res: Response,
+): Promise<void> {
+  const order =
+    initialOrder.status === "pending" && !initialOrder.stripePaymentIntentId
+      ? await waitForPaymentIntent(database, initialOrder.id)
+      : initialOrder;
+
+  if (!order) {
+    res.status(409).json({
+      error: "Your order is still being created, try again in a moment.",
+    });
+    return;
+  }
+
+  if (order.status !== "pending") {
+    res.status(409).json({
+      error: `This order can no longer be paid. Order ${order.orderNumber}.`,
+      order_number: order.orderNumber,
+    });
+    return;
+  }
+
+  if (!order.stripePaymentIntentId) {
+    res.status(409).json({
+      error: "Your order is still being created, try again in a moment.",
+      order_number: order.orderNumber,
+    });
+    return;
+  }
+
+  if (!stripe) {
+    res.status(503).json({
+      error: "Online payments are temporarily unavailable.",
+      order_number: order.orderNumber,
+    });
+    return;
+  }
+
+  let paymentIntent: Stripe.PaymentIntent;
+
+  try {
+    paymentIntent = await stripe.paymentIntents.retrieve(
+      order.stripePaymentIntentId,
+    );
+  } catch {
+    res.status(502).json({
+      error: "We could not reload your existing payment. Please try again.",
+      order_number: order.orderNumber,
+    });
+    return;
+  }
+
+  if (!paymentIntent.client_secret) {
+    res.status(502).json({
+      error: "We could not reload your existing payment. Please try again.",
+      order_number: order.orderNumber,
+    });
+    return;
+  }
+
+  res.set("Idempotent-Replayed", "true");
+  res.status(200).json(orderResponse(order, paymentIntent.client_secret));
+}
+
+function idempotencyInput(
+  input: z.infer<typeof createOrderSchema>,
+): OrderIdempotencyFingerprintInput {
+  return {
+    items: input.items,
+    zip: input.zip,
+    email: input.email,
+    shipping_address: input.shipping_address,
+    discount_code: input.discount_code ?? null,
+  };
+}
+
 export const ordersRouter = Router();
 
 ordersRouter.post(
@@ -169,6 +328,15 @@ ordersRouter.post(
 
     if (!parsed.success) {
       sendValidationError(res, parsed.error);
+      return;
+    }
+
+    const idempotencyKey = (req.get(ORDER_IDEMPOTENCY_KEY_HEADER) ?? "").trim();
+
+    if (!isUuidV4(idempotencyKey)) {
+      res.status(400).json({
+        error: "A valid Idempotency-Key header is required.",
+      });
       return;
     }
 
@@ -200,7 +368,30 @@ ordersRouter.post(
       return;
     }
 
+    const customerId = req.customer!.id;
+    const idempotencyFingerprint = computeOrderIdempotencyFingerprint(
+      idempotencyInput(input),
+    );
+
     try {
+      const existing = await findOrderByIdempotencyKey(
+        db,
+        customerId,
+        idempotencyKey,
+      );
+
+      if (existing) {
+        if (existing.idempotencyFingerprint !== idempotencyFingerprint) {
+          res.status(422).json({
+            error: "This checkout changed. Please try again.",
+          });
+          return;
+        }
+
+        await replayOrder(db, existing, res);
+        return;
+      }
+
       const requested = new Map<string, number>();
 
       for (const item of input.items) {
@@ -335,84 +526,116 @@ ordersRouter.post(
       });
 
       const address = input.shipping_address;
-      const customerId = req.customer!.id;
-      const created = await db.transaction(async (tx) => {
-        const images = await primaryImagesByProduct(tx, productIds);
-        const [existingCustomer] = await tx
-          .select()
-          .from(customers)
-          .where(eq(customers.id, customerId))
-          .for("update");
+      let created: { id: string; orderNumber: string };
 
-        if (!existingCustomer) {
-          throw new Error("Customer account no longer exists.");
+      try {
+        created = await db.transaction(async (tx) => {
+          const images = await primaryImagesByProduct(tx, productIds);
+          const [existingCustomer] = await tx
+            .select()
+            .from(customers)
+            .where(eq(customers.id, customerId))
+            .for("update");
+
+          if (!existingCustomer) {
+            throw new Error("Customer account no longer exists.");
+          }
+
+          const [customer] = await tx
+            .update(customers)
+            .set({
+              email: input.email,
+              name: existingCustomer.name || address.name,
+              ...(input.sms_opt_in
+                ? {
+                    smsOptIn: true,
+                    smsOptInAt: new Date(),
+                  }
+                : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(customers.id, existingCustomer.id))
+            .returning({
+              id: customers.id,
+              phone: customers.phone,
+            });
+
+          const [order] = await tx
+            .insert(orders)
+            .values({
+              customerId: customer.id,
+              email: input.email,
+              status: "pending",
+              subtotalCents: totals.subtotalCents,
+              discountCents: totals.discountCents,
+              deliveryFeeCents: totals.deliveryFeeCents,
+              taxCents: totals.taxCents,
+              totalCents: totals.totalCents,
+              discountCode: appliedDiscountCode,
+              shippingName: address.name,
+              shippingLine1: address.line1,
+              shippingLine2: address.line2 ?? null,
+              shippingCity: address.city,
+              shippingState: address.state,
+              shippingZip: address.zip,
+              shippingPhone: customer.phone,
+              idempotencyKey,
+              idempotencyFingerprint,
+            })
+            .returning({
+              id: orders.id,
+              orderNumber: orders.orderNumber,
+            });
+
+          await tx.insert(orderItems).values(
+            lines.map((line) => ({
+              orderId: order.id,
+              productId: line.product.id,
+              nameSnapshot: line.product.name,
+              skuSnapshot: line.product.sku,
+              imageUrlSnapshot: images.get(line.product.id) ?? null,
+              unitPriceCents: line.unitPriceCents,
+              quantity: line.quantity,
+              lineTotalCents: line.lineTotalCents,
+            })),
+          );
+
+          await tx.insert(deliveries).values({
+            orderId: order.id,
+            method: null,
+            status: "pending",
+          });
+
+          return order;
+        });
+      } catch (error) {
+        if (!isUniqueViolation(error)) {
+          throw error;
         }
 
-        const [customer] = await tx
-          .update(customers)
-          .set({
-            email: input.email,
-            name: existingCustomer.name || address.name,
-            ...(input.sms_opt_in
-              ? {
-                  smsOptIn: true,
-                  smsOptInAt: new Date(),
-                }
-              : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(customers.id, existingCustomer.id))
-          .returning({
-            id: customers.id,
-            phone: customers.phone,
-          });
-
-        const [order] = await tx
-          .insert(orders)
-          .values({
-            customerId: customer.id,
-            email: input.email,
-            status: "pending",
-            subtotalCents: totals.subtotalCents,
-            discountCents: totals.discountCents,
-            deliveryFeeCents: totals.deliveryFeeCents,
-            taxCents: totals.taxCents,
-            totalCents: totals.totalCents,
-            discountCode: appliedDiscountCode,
-            shippingName: address.name,
-            shippingLine1: address.line1,
-            shippingLine2: address.line2 ?? null,
-            shippingCity: address.city,
-            shippingState: address.state,
-            shippingZip: address.zip,
-            shippingPhone: customer.phone,
-          })
-          .returning({
-            id: orders.id,
-            orderNumber: orders.orderNumber,
-          });
-
-        await tx.insert(orderItems).values(
-          lines.map((line) => ({
-            orderId: order.id,
-            productId: line.product.id,
-            nameSnapshot: line.product.name,
-            skuSnapshot: line.product.sku,
-            imageUrlSnapshot: images.get(line.product.id) ?? null,
-            unitPriceCents: line.unitPriceCents,
-            quantity: line.quantity,
-            lineTotalCents: line.lineTotalCents,
-          })),
+        const existing = await findOrderByIdempotencyKey(
+          db,
+          customerId,
+          idempotencyKey,
         );
 
-        await tx.insert(deliveries).values({
-          orderId: order.id,
-          method: null,
-          status: "pending",
-        });
+        if (!existing) {
+          res.status(409).json({
+            error: "Your order is still being created, try again in a moment.",
+          });
+          return;
+        }
 
-        return order;
-      });
+        if (existing.idempotencyFingerprint !== idempotencyFingerprint) {
+          res.status(422).json({
+            error: "This checkout changed. Please try again.",
+          });
+          return;
+        }
+
+        await replayOrder(db, existing, res);
+        return;
+      }
 
       let paymentIntent;
 
@@ -457,6 +680,7 @@ ordersRouter.post(
           .set({
             status: "cancelled",
             cancelledAt: new Date(),
+            idempotencyKey: null,
             updatedAt: new Date(),
           })
           .where(eq(orders.id, created.id));

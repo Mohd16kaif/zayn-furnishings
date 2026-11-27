@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { baseColumns } from "./common";
@@ -47,6 +48,8 @@ export const orders = pgTable(
     customerNotes: text("customer_notes"),
     internalNotes: text("internal_notes"),
     stripePaymentIntentId: text("stripe_payment_intent_id").unique(),
+    idempotencyKey: text("idempotency_key"),
+    idempotencyFingerprint: text("idempotency_fingerprint"),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   },
@@ -55,6 +58,9 @@ export const orders = pgTable(
     index("orders_email_idx").on(table.email),
     index("orders_status_idx").on(table.status),
     index("orders_created_at_idx").on(table.createdAt),
+    uniqueIndex("orders_customer_id_idempotency_key_unique")
+      .on(table.customerId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
   ],
 );
 

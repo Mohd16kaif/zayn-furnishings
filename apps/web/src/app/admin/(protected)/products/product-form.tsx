@@ -21,6 +21,7 @@ import {
   formatCents,
 } from "@/lib/money";
 import { ProductImages } from "./product-images";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -133,6 +134,7 @@ export function ProductForm({
   initialSaved?: boolean;
 }) {
   const router = useRouter();
+  const inFlight = useInFlightGuard();
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [product, setProduct] = useState<AdminProduct | null>(null);
   const [form, setForm] = useState<ProductFormState>(emptyForm);
@@ -329,6 +331,10 @@ export function ProductForm({
       ...(productId ? {} : { stock_qty: stockQty }),
     };
 
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -357,6 +363,7 @@ export function ProductForm({
           : "Unable to save the product.",
       );
     } finally {
+      inFlight.end();
       setSaving(false);
     }
   }
@@ -374,6 +381,10 @@ export function ProductForm({
     const quantity = parseWhole(stockQuantity);
     if (quantity === null) {
       setStockError("Enter a whole number of 0 or more.");
+      return;
+    }
+
+    if (!inFlight.begin()) {
       return;
     }
 
@@ -409,6 +420,7 @@ export function ProductForm({
           : "Unable to update stock.",
       );
     } finally {
+      inFlight.end();
       setStockSaving(false);
     }
   }

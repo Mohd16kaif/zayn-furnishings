@@ -16,6 +16,7 @@ import {
 } from "@/lib/adminApi";
 import { contentTab } from "./content-config";
 import { ContentLinkPicker } from "./content-link-picker";
+import { useInFlightGuard } from "@/lib/useInFlightGuard";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500";
@@ -119,11 +120,17 @@ export function ContentForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(
     {},
   );
+  const inFlight = useInFlightGuard();
 
   const canBeActive = !isHero || Boolean(imageUrl);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!inFlight.begin()) {
+      return;
+    }
+
     setSaving(true);
     setError("");
     setFieldErrors({});
@@ -221,6 +228,7 @@ export function ContentForm({
       setError(message);
       onToast("error", message);
     } finally {
+      inFlight.end();
       setSaving(false);
     }
   }

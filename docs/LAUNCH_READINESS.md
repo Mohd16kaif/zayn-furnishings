@@ -2,7 +2,9 @@
 
 Date: 2026-11-27  
 Scope: storefront and admin (web-only), 40 requested items, launch checklist, and a small-batch build plan.  
-Method: read-only code review, production build, a Playwright site audit against two throwaway database states, and a browser-side security scan. No file under `apps/` or `packages/` was changed. No migration was added.
+Method: read-only code review, production build, a Playwright site audit against two throwaway database states, and a browser-side security scan. The original audit made no change under `apps/` or `packages/` and added no migration; the B2 implementation note below records the later batch.
+
+> **B2 implementation note (2026-11-27, after this audit snapshot).** Order creation is now idempotent: the browser stores a UUID v4 plus a canonical checkout fingerprint in `sessionStorage`, the web BFF validates and forwards `Idempotency-Key`, the API stores the key/fingerprint on the order and replays the existing PaymentIntent, and migration `0012_glorious_marvex.sql` adds the two nullable columns plus the partial unique index. The audit counts and U19 verdict below describe the state before B2; U19 is now implemented. See `reports/2026-11-27-b2-idempotency.md` for the B2 results.
 
 Raw evidence: `reports/2026-11-27-audit-raw.json` (gitignored).  
 Audit command: `pnpm audit:site --label fresh` and `pnpm audit:site --label dev`. The admin session was minted into memory only and was never printed.
@@ -576,6 +578,18 @@ Acceptance:
 - Bulk apply replay after a price change returns 409, not a second batch.
 
 Check: new `scripts/check-idempotency.mjs` against a throwaway DB; extend `apps/web/scripts/check-checkout.mjs`; run `pnpm test` for API tests. Migration is additive only.
+
+Implemented on 2026-11-27:
+
+- Client UUID/fingerprint helper: `apps/web/src/lib/orderIdempotency.ts`.
+- Web validation/forwarding: `apps/web/src/app/api/orders/route.ts` and `apps/web/src/lib/authApi.ts`.
+- API validation/replay/concurrency: `apps/api/src/routes/orders.ts` and `apps/api/src/lib/orderIdempotency.ts`.
+- Schema/migration: `apps/api/src/db/schema/orders.ts`, `apps/api/drizzle/0012_glorious_marvex.sql`, `0012_snapshot.json`.
+- Tests: shared canonicalization/key tests, API route tests, throwaway-DB concurrency test, pure web key helper checks, and `scripts/check-idempotency.mjs` wired into `pnpm check:e2e`.
+- Admin/storefront in-flight guards: synchronous `useInFlightGuard()` in checkout, sign-in, ZIP/cart controls, admin login/logout, product/category/content/delivery/settings, price preview/apply/undo, refunds, order status/delivery/notes/resend, and image upload/reorder/delete.
+- Idempotency keys live as long as their order row. A Stripe PaymentIntent creation failure nulls the key so the same attempt can retry; normal keys have no expiry.
+
+The full result is in `reports/2026-11-27-b2-idempotency.md`.
 
 ### B3 - SEO, icons and metadata (P2)
 

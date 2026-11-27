@@ -10,6 +10,11 @@ import {
   declaredBodyTooLarge,
   validateAdminProxyPath,
 } from "../apps/web/src/lib/adminProxy.ts";
+import {
+  getOrCreateOrderIdempotencyKey,
+  resetOrderIdempotencyMemoryForTests,
+} from "../apps/web/src/lib/orderIdempotency.ts";
+import { isUuidV4 } from "../packages/shared/src/orderIdempotency.ts";
 import { apiBaseUrl } from "../apps/web/src/lib/apiBaseUrl.ts";
 import { isSameOriginRequest } from "../apps/web/src/lib/requestGuards.ts";
 
@@ -274,4 +279,107 @@ assert.equal(
   false,
 );
 
-console.log("PASS: admin BFF unit checks (cookie flags, origin guard, path validation, header stripping, internal API URL).");
+function checkoutFingerprintInput(overrides = {}) {
+  return {
+    items: [
+      { product_id: "11111111-1111-4111-8111-111111111111", quantity: 1 },
+    ],
+    zip: "11201",
+    email: "customer@example.com",
+    shipping_address: {
+      name: "Jordan Lee",
+      line1: "1 Main St",
+      city: "Brooklyn",
+      state: "NY",
+      zip: "11201",
+    },
+    discount_code: "WELCOME10",
+    ...overrides,
+  };
+}
+
+function memoryStorage() {
+  const values = new Map();
+
+  return {
+    getItem(key) {
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      values.set(key, value);
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
+
+const blockedStorage = {
+  getItem() {
+    throw new Error("blocked");
+  },
+  setItem() {
+    throw new Error("blocked");
+  },
+  removeItem() {
+    throw new Error("blocked");
+  },
+};
+
+resetOrderIdempotencyMemoryForTests();
+const storage = memoryStorage();
+const firstKey = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput(),
+  storage,
+);
+const sameKey = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput({
+    email: "CUSTOMER@EXAMPLE.COM",
+    discount_code: "welcome10",
+  }),
+  storage,
+);
+const changedKey = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput({
+    items: [
+      { product_id: "11111111-1111-4111-8111-111111111111", quantity: 2 },
+    ],
+  }),
+  storage,
+);
+
+assert.equal(isUuidV4(firstKey), true);
+assert.equal(firstKey, sameKey);
+assert.notEqual(firstKey, changedKey);
+assert.equal(isUuidV4(changedKey), true);
+
+resetOrderIdempotencyMemoryForTests();
+const emptyStorageKey = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput(),
+  null,
+);
+assert.equal(isUuidV4(emptyStorageKey), true);
+
+resetOrderIdempotencyMemoryForTests();
+const blockedKey = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput(),
+  blockedStorage,
+);
+const blockedKeyAgain = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput(),
+  blockedStorage,
+);
+assert.equal(isUuidV4(blockedKey), true);
+assert.equal(blockedKey, blockedKeyAgain);
+
+resetOrderIdempotencyMemoryForTests();
+const malformedStorage = memoryStorage();
+malformedStorage.setItem("zf-checkout-idempotency-v1", "not-json");
+const rotatedKey = getOrCreateOrderIdempotencyKey(
+  checkoutFingerprintInput(),
+  malformedStorage,
+);
+assert.equal(isUuidV4(rotatedKey), true);
+assert.notEqual(rotatedKey, blockedKey);
+
+console.log("PASS: admin BFF unit checks (cookie flags, origin guard, path validation, header stripping, internal API URL, order idempotency keys).");

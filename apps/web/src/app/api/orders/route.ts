@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import {
+  isUuidV4,
+  ORDER_IDEMPOTENCY_KEY_HEADER,
+} from "@zayn/shared";
+import {
   callApiWithSession,
   clearSessionCookie,
   NO_STORE_HEADERS,
@@ -96,6 +100,17 @@ export async function POST(request: Request) {
     );
   }
 
+  const idempotencyKey = (
+    request.headers.get(ORDER_IDEMPOTENCY_KEY_HEADER) ?? ""
+  ).trim();
+
+  if (!isUuidV4(idempotencyKey)) {
+    return NextResponse.json(
+      { error: "A valid Idempotency-Key header is required." },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
+  }
+
   const body: unknown = await request.json().catch(() => null);
 
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -112,6 +127,9 @@ export async function POST(request: Request) {
         method: "POST",
         visitorIp,
         body,
+        headers: {
+          [ORDER_IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+        },
         timeoutMs: 30_000,
       },
     );
@@ -135,9 +153,16 @@ export async function POST(request: Request) {
       return nextResponse;
     }
 
+    const replayHeader = response.headers.get("idempotent-replayed");
+
     return NextResponse.json(data, {
       status: response.status,
-      headers: NO_STORE_HEADERS,
+      headers: {
+        ...NO_STORE_HEADERS,
+        ...(replayHeader
+          ? { "Idempotent-Replayed": replayHeader }
+          : {}),
+      },
     });
   } catch {
     return NextResponse.json(
