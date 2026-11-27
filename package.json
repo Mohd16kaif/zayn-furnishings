@@ -14,6 +14,7 @@
     "test": "pnpm -r --if-present test",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:price-change": "node scripts/check-price-change.mjs",
+    "check:e2e": "node scripts/check-e2e.mjs",
     "docker:build:api": "node scripts/docker-build.mjs api",
     "docker:build:web": "node scripts/docker-build.mjs web",
     "docker:smoke": "node scripts/docker-smoke.mjs",

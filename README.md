@@ -66,9 +66,39 @@ together.
 | `pnpm dev`         | Run web + API in watch mode                    |
 | `pnpm build`       | Build shared, API, and web                     |
 | `pnpm lint`        | Type-check shared/API and lint web             |
+| `pnpm test`        | Unit tests plus pure web checks (no servers)   |
+| `pnpm check:e2e`   | Server-based checks (needs dev servers)        |
 | `pnpm start`       | Start the built API                            |
 | `pnpm db:generate` | Generate Drizzle migrations from the schema    |
 | `pnpm db:migrate`  | Apply Drizzle migrations to the database       |
+
+## Testing
+
+`pnpm test` runs the shared and API test suites plus the pure web checks
+(`check-admin-bff-unit.mjs` and the media image config check). It does not need
+dev servers or a database. The API database tests are skipped unless
+`TEST_DATABASE_URL` points at a disposable database; set that variable only for
+the current shell.
+
+`pnpm check:e2e` runs the server-based checks in order against already running
+dev servers: `check-price-change.mjs`, `check:admin-login`,
+`check-admin-bff.mjs`, `check:layout`, and `check:checkout`. It prints a
+PASS/FAIL list at the end. Start `pnpm dev` first.
+
+For the admin checks, `check:e2e` mints a fresh development session for each
+check and keeps the token in memory only. If minting is unavailable, set a
+token for the current shell (the command below does not print it):
+
+```powershell
+$env:ADMIN_SESSION_TOKEN = (pnpm --filter @zayn/api admin:mint-dev-session 2>$null)
+pnpm check:e2e
+```
+
+The individual server-based scripts remain available; `check:layout`,
+`check:checkout`, `check:admin-login`, `check-admin-bff.mjs`, and
+`check-price-change.mjs` all need running dev servers, and every check except
+layout/checkout also needs `ADMIN_SESSION_TOKEN` when run directly.
+
 
 ## Environment
 

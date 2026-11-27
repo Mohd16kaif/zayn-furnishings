@@ -28,6 +28,7 @@ coverage
 apps/api/media-data
 apps/api/tmp-email-preview
 backups
+reports
 docs/screenshots
 apps/web/docs/screenshots
 _originals

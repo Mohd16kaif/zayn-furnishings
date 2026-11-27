@@ -426,6 +426,309 @@ describeWithDatabase("bulk price change database behavior", () => {
   );
 
   it(
+    "refuses a batch where every matching product would fall below the minimum",
+    async () => {
+      const admin = await createAdmin();
+      const category = await createCategory();
+      const first = await createProduct(category.id, 100);
+      const second = await createProduct(category.id, 150);
+      const params: PriceChangeParamsInput = {
+        scope: {
+          type: "category",
+          category_id: category.id,
+          include_children: true,
+        },
+        statuses: ["active"],
+        mode: "amount_decrease",
+        value: 200,
+        apply_to: "regular",
+        rounding: "none",
+      };
+      const { preview, okRows, token } = await tokenFor(params);
+
+      expect(preview.counts).toEqual({
+        ok: 0,
+        unchanged: 0,
+        blocked: 2,
+      });
+      expect(okRows).toHaveLength(0);
+      expect(
+        preview.rows.every(
+          (row) =>
+            row.status === "blocked" &&
+            row.reason?.includes("below $1.00"),
+        ),
+      ).toBe(true);
+
+      const [previewBatchCount] = await database
+        .select({ value: count() })
+        .from(priceChangeBatches)
+        .where(eq(priceChangeBatches.adminUserId, admin.id));
+      expect(Number(previewBatchCount?.value ?? 0)).toBe(0);
+
+      await expect(
+        applyPriceChange(database, {
+          adminId: admin.id,
+          params,
+          previewToken: token,
+          secret: SECRET,
+        }),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining("No prices would change"),
+      });
+
+      const [batchCount] = await database
+        .select({ value: count() })
+        .from(priceChangeBatches)
+        .where(eq(priceChangeBatches.adminUserId, admin.id));
+      const [auditCount] = await database
+        .select({ value: count() })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.adminUserId, admin.id),
+            eq(auditLog.action, "price_change.apply"),
+          ),
+        );
+
+      expect(Number(batchCount?.value ?? 0)).toBe(0);
+      expect(Number(auditCount?.value ?? 0)).toBe(0);
+
+      const unchangedProducts = await database
+        .select()
+        .from(products)
+        .where(inArray(products.id, [first.id, second.id]));
+      const byId = new Map(
+        unchangedProducts.map((product) => [product.id, product]),
+      );
+
+      expect(byId.get(first.id)?.priceCents).toBe(100);
+      expect(byId.get(second.id)?.priceCents).toBe(150);
+    },
+    60_000,
+  );
+
+  it(
+    "applies only the ok rows and leaves products below the minimum untouched",
+    async () => {
+      const admin = await createAdmin();
+      const category = await createCategory();
+      const changeable = await createProduct(category.id, 1000);
+      const blocked = await createProduct(category.id, 100);
+      const params: PriceChangeParamsInput = {
+        scope: {
+          type: "category",
+          category_id: category.id,
+          include_children: true,
+        },
+        statuses: ["active"],
+        mode: "amount_decrease",
+        value: 50,
+        apply_to: "regular",
+        rounding: "none",
+      };
+      const { preview, okRows, token } = await tokenFor(params);
+
+      expect(preview.counts).toEqual({
+        ok: 1,
+        unchanged: 0,
+        blocked: 1,
+      });
+      expect(okRows).toHaveLength(1);
+      expect(okRows[0].productId).toBe(changeable.id);
+
+      const result = await applyPriceChange(database, {
+        adminId: admin.id,
+        params,
+        previewToken: token,
+        secret: SECRET,
+      });
+
+      expect(result.batch.itemCount).toBe(1);
+      expect(result.counts).toEqual({
+        ok: 1,
+        unchanged: 0,
+        blocked: 1,
+      });
+
+      const after = await database
+        .select()
+        .from(products)
+        .where(inArray(products.id, [changeable.id, blocked.id]));
+      const byId = new Map(
+        after.map((product) => [product.id, product]),
+      );
+
+      expect(byId.get(changeable.id)?.priceCents).toBe(950);
+      expect(byId.get(blocked.id)?.priceCents).toBe(100);
+
+      const items = await database
+        .select()
+        .from(priceChangeItems)
+        .where(eq(priceChangeItems.batchId, result.batch.id));
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        productId: changeable.id,
+        oldPriceCents: 1000,
+        newPriceCents: 950,
+      });
+      expect(
+        items.some((item) => item.productId === blocked.id),
+      ).toBe(false);
+
+      const [audit] = await database
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.action, "price_change.apply"),
+            eq(auditLog.entityId, result.batch.id),
+          ),
+        );
+
+      expect(audit).toBeTruthy();
+      expect(audit.details).toMatchObject({
+        counts: { ok: 1, unchanged: 0, blocked: 1 },
+        item_count: 1,
+      });
+    },
+    60_000,
+  );
+
+  it(
+    "blocks a sale-price conflict and writes no batch or audit row",
+    async () => {
+      const admin = await createAdmin();
+      const category = await createCategory();
+      const product = await createProduct(category.id, 1000, 900);
+      const params: PriceChangeParamsInput = {
+        scope: {
+          type: "category",
+          category_id: category.id,
+          include_children: true,
+        },
+        statuses: ["active"],
+        mode: "percent_decrease",
+        value: 50,
+        apply_to: "regular",
+        rounding: "none",
+      };
+      const { preview, okRows, token } = await tokenFor(params);
+
+      expect(preview.counts).toEqual({
+        ok: 0,
+        unchanged: 0,
+        blocked: 1,
+      });
+      expect(okRows).toHaveLength(0);
+      expect(preview.rows[0]?.reason).toContain(
+        "no longer be below",
+      );
+
+      await expect(
+        applyPriceChange(database, {
+          adminId: admin.id,
+          params,
+          previewToken: token,
+          secret: SECRET,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+
+      const [batchCount] = await database
+        .select({ value: count() })
+        .from(priceChangeBatches)
+        .where(eq(priceChangeBatches.adminUserId, admin.id));
+      const [auditCount] = await database
+        .select({ value: count() })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.adminUserId, admin.id),
+            eq(auditLog.action, "price_change.apply"),
+          ),
+        );
+
+      expect(Number(batchCount?.value ?? 0)).toBe(0);
+      expect(Number(auditCount?.value ?? 0)).toBe(0);
+
+      const [unchanged] = await database
+        .select()
+        .from(products)
+        .where(eq(products.id, product.id));
+      expect(unchanged.priceCents).toBe(1000);
+      expect(unchanged.salePriceCents).toBe(900);
+    },
+    60_000,
+  );
+
+  it(
+    "blocks an increase above the maximum and writes nothing",
+    async () => {
+      const admin = await createAdmin();
+      const category = await createCategory();
+      const product = await createProduct(category.id, 100_000_000);
+      const params: PriceChangeParamsInput = {
+        scope: {
+          type: "category",
+          category_id: category.id,
+          include_children: true,
+        },
+        statuses: ["active"],
+        mode: "amount_increase",
+        value: 1,
+        apply_to: "regular",
+        rounding: "none",
+      };
+      const { preview, okRows, token } = await tokenFor(params);
+
+      expect(preview.counts).toEqual({
+        ok: 0,
+        unchanged: 0,
+        blocked: 1,
+      });
+      expect(okRows).toHaveLength(0);
+      expect(preview.rows[0]?.reason).toContain(
+        "above $1,000,000.00",
+      );
+
+      await expect(
+        applyPriceChange(database, {
+          adminId: admin.id,
+          params,
+          previewToken: token,
+          secret: SECRET,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+
+      const [batchCount] = await database
+        .select({ value: count() })
+        .from(priceChangeBatches)
+        .where(eq(priceChangeBatches.adminUserId, admin.id));
+      const [auditCount] = await database
+        .select({ value: count() })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.adminUserId, admin.id),
+            eq(auditLog.action, "price_change.apply"),
+          ),
+        );
+
+      expect(Number(batchCount?.value ?? 0)).toBe(0);
+      expect(Number(auditCount?.value ?? 0)).toBe(0);
+
+      const [unchanged] = await database
+        .select()
+        .from(products)
+        .where(eq(products.id, product.id));
+      expect(unchanged.priceCents).toBe(100_000_000);
+    },
+    60_000,
+  );
+
+  it(
     "undo restores only products that still match and rejects a double undo",
     async () => {
       const { admin, first, second, params } = await scenario();

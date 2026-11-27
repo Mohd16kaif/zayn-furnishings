@@ -62,6 +62,14 @@ async function adminRequest(context, method, requestPath, data) {
   return response.json().catch(() => null);
 }
 
+async function readProduct(context, productId) {
+  return adminRequest(
+    context,
+    "GET",
+    `/api/admin-proxy/admin/products/${productId}`,
+  );
+}
+
 async function waitForProductPagePrice(page, slug, expected, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
 
@@ -156,13 +164,94 @@ async function main() {
     await adminPage
       .getByRole("heading", { name: "Change prices" })
       .waitFor({ timeout: 10_000 });
-    const panel = adminPage.getByRole("dialog");
+    let panel = adminPage.getByRole("dialog");
 
     const fits = await adminPage.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,
     );
     assert.equal(fits, true, "The price change panel must fit at 390px.");
     pass("Price change panel fits at 390px without horizontal overflow.");
+
+    const historySection = panel
+      .locator("section")
+      .filter({ hasText: "Recent price changes" });
+    await panel
+      .getByText("Loading recent price changes...")
+      .waitFor({ state: "detached", timeout: 20_000 })
+      .catch(() => undefined);
+    const historyCountBefore = await historySection
+      .getByRole("listitem")
+      .count();
+
+    await adminPage.getByLabel("Where").selectOption("all");
+    await adminPage.getByRole("button", { name: "Continue" }).click();
+    await adminPage.getByLabel("Direction").selectOption("decrease");
+    await adminPage.getByLabel("Type").selectOption("percent");
+    await adminPage.getByLabel("Percent").fill("99");
+    await adminPage
+      .getByRole("button", { name: "Preview changes" })
+      .click();
+    await panel
+      .getByRole("alert")
+      .filter({ hasText: "Enter a percentage from 0.01 to 90." })
+      .waitFor({ timeout: 10_000 });
+    pass("Percent validation refuses 99 with the 0.01 to 90 message.");
+
+    await adminPage.getByLabel("Type").selectOption("amount");
+    await adminPage.getByLabel("Amount (USD)").fill("1000000");
+    await adminPage.getByLabel("Apply to").selectOption("regular");
+    await adminPage.getByLabel("Rounding").selectOption("none");
+    await adminPage
+      .getByRole("button", { name: "Preview changes" })
+      .click();
+
+    await panel
+      .getByText(/0 products will change/)
+      .waitFor({ timeout: 20_000 });
+    await panel
+      .getByText(
+        "Some products will be skipped. Review the reasons in the table before applying.",
+      )
+      .waitFor();
+    assert.ok(
+      (await panel
+        .getByText(/The new regular price would be below \$1\.00\./)
+        .count()) >= 2,
+      "Expected blocked rows with the below-minimum reason.",
+    );
+    assert.ok(
+      (await panel.getByText("Skipped", { exact: true }).count()) >= 2,
+      "Expected at least two Skipped badges.",
+    );
+    assert.equal(
+      await panel
+        .getByRole("button", { name: "Apply prices" })
+        .isDisabled(),
+      true,
+      "Apply prices must be disabled when nothing can change.",
+    );
+    assert.equal(
+      await historySection.getByRole("listitem").count(),
+      historyCountBefore,
+      "A blocked preview must not add a Recent price changes entry.",
+    );
+
+    const productAAfterBlocked = await readProduct(context, productA.id);
+    const productBAfterBlocked = await readProduct(context, productB.id);
+
+    assert.equal(productAAfterBlocked.price_cents, 1000);
+    assert.equal(productBAfterBlocked.price_cents, 2000);
+    pass(
+      "Blocked preview shows skipped rows and reasons; apply is disabled and no history entry or price change was made.",
+    );
+
+    await panel.getByRole("button", { name: "Close" }).click();
+    await panel.waitFor({ state: "detached" });
+    await changeButton.click();
+    await adminPage
+      .getByRole("heading", { name: "Change prices" })
+      .waitFor({ timeout: 10_000 });
+    panel = adminPage.getByRole("dialog");
 
     await adminPage.getByLabel("Where").selectOption(category.id);
     await adminPage

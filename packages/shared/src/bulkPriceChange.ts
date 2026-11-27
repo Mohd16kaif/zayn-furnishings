@@ -228,9 +228,13 @@ function computeRow(
   const rawSale = changeSale
     ? nextPrice(product.salePriceCents as number, params)
     : product.salePriceCents;
-  const newPrice = roundPrice(rawPrice, params.rounding);
+  const newPrice = changeRegular
+    ? roundPrice(rawPrice, params.rounding)
+    : product.priceCents;
   const newSale =
-    rawSale === null ? null : roundPrice(rawSale, params.rounding);
+    changeSale && rawSale !== null
+      ? roundPrice(rawSale, params.rounding)
+      : product.salePriceCents;
 
   if (changeRegular) {
     if (newPrice < BULK_PRICE_MIN_CENTS) {

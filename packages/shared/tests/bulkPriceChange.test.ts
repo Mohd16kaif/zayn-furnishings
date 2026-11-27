@@ -190,6 +190,123 @@ describe("computeBulkPriceChange sale rules", () => {
     expect(row.newSale).toBe(1000);
     expect(row.reason).toContain("must stay below");
   });
+
+  it("does not round the sale price during a regular-only change", () => {
+    const result = computeBulkPriceChange(
+      [product("p1", 1000, 900)],
+      params({
+        mode: "amount_increase",
+        value: 100,
+        applyTo: "regular",
+        rounding: "end_99",
+      }),
+    );
+    const row = rowFor(result, "p1");
+
+    expect(row.status).toBe("ok");
+    expect(row.newPrice).toBe(1199);
+    expect(row.newSale).toBe(900);
+  });
+
+  it("does not round the regular price during a sale-only change", () => {
+    const result = computeBulkPriceChange(
+      [product("p1", 1055, 1000)],
+      params({
+        mode: "amount_decrease",
+        value: 100,
+        applyTo: "sale",
+        rounding: "end_99",
+      }),
+    );
+    const row = rowFor(result, "p1");
+
+    expect(row.status).toBe("ok");
+    expect(row.newPrice).toBe(1055);
+    expect(row.newSale).toBe(999);
+  });
+});
+
+describe("computeBulkPriceChange rule violations", () => {
+  it("blocks every matching product when an amount decrease pushes all below the minimum", () => {
+    const result = computeBulkPriceChange(
+      [product("p1", 100), product("p2", 150), product("p3", 199)],
+      params({ mode: "amount_decrease", value: 200 }),
+    );
+
+    expect(result.counts).toEqual({ ok: 0, unchanged: 0, blocked: 3 });
+    expect(result.totals.okCount).toBe(0);
+    expect(result.totals.regularDifferenceCents).toBe(0);
+    expect(result.rows.every((row) => row.status === "blocked")).toBe(true);
+
+    for (const row of result.rows) {
+      expect(row.reason).toContain("below $1.00");
+      expect(row.newPrice).toBeLessThan(100);
+    }
+
+    expect(rowFor(result, "p1").oldPrice).toBe(100);
+    expect(rowFor(result, "p2").oldPrice).toBe(150);
+    expect(rowFor(result, "p3").oldPrice).toBe(199);
+  });
+
+  it("blocks every matching product when a percent decrease pushes all below the minimum", () => {
+    const result = computeBulkPriceChange(
+      [product("p1", 100), product("p2", 150)],
+      params({ mode: "percent_decrease", value: 90 }),
+    );
+
+    expect(result.counts).toEqual({ ok: 0, unchanged: 0, blocked: 2 });
+    expect(result.rows.every((row) => row.status === "blocked")).toBe(true);
+    expect(rowFor(result, "p1").reason).toContain("below $1.00");
+    expect(rowFor(result, "p2").reason).toContain("below $1.00");
+  });
+
+  it("applies only the ok rows when some products would fall below the minimum", () => {
+    const result = computeBulkPriceChange(
+      [product("ok", 1000), product("low1", 100), product("low2", 150)],
+      params({ mode: "amount_decrease", value: 100 }),
+    );
+
+    expect(result.counts).toEqual({ ok: 1, unchanged: 0, blocked: 2 });
+    expect(rowFor(result, "ok").status).toBe("ok");
+    expect(rowFor(result, "ok").newPrice).toBe(900);
+    expect(rowFor(result, "low1").status).toBe("blocked");
+    expect(rowFor(result, "low1").oldPrice).toBe(100);
+    expect(rowFor(result, "low2").status).toBe("blocked");
+    expect(rowFor(result, "low2").oldPrice).toBe(150);
+    expect(result.totals).toMatchObject({
+      okCount: 1,
+      oldRegularCents: 1000,
+      newRegularCents: 900,
+      regularDifferenceCents: -100,
+    });
+  });
+
+  it("blocks every regular decrease that conflicts with an existing sale price", () => {
+    const result = computeBulkPriceChange(
+      [product("p1", 1000, 900), product("p2", 2000, 1500)],
+      params({ mode: "percent_decrease", value: 50 }),
+    );
+
+    expect(result.counts).toEqual({ ok: 0, unchanged: 0, blocked: 2 });
+    expect(rowFor(result, "p1").reason).toContain("no longer be below");
+    expect(rowFor(result, "p2").reason).toContain("no longer be below");
+    expect(rowFor(result, "p1").newSale).toBe(900);
+    expect(rowFor(result, "p2").newSale).toBe(1500);
+  });
+
+  it("blocks every increase that would exceed the maximum price", () => {
+    const result = computeBulkPriceChange(
+      [
+        product("p1", BULK_PRICE_MAX_CENTS),
+        product("p2", BULK_PRICE_MAX_CENTS),
+      ],
+      params({ mode: "amount_increase", value: 1 }),
+    );
+
+    expect(result.counts).toEqual({ ok: 0, unchanged: 0, blocked: 2 });
+    expect(rowFor(result, "p1").reason).toContain("above $1,000,000.00");
+    expect(rowFor(result, "p2").reason).toContain("above $1,000,000.00");
+  });
 });
 
 describe("computeBulkPriceChange filters and boundaries", () => {

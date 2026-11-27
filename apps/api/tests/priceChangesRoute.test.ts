@@ -487,6 +487,193 @@ describe("admin price change preview and apply", () => {
     expect(body.error).toContain("more than 500 products");
   });
 
+  it("previews all rows blocked below the minimum and refuses to apply", async () => {
+    const params: PriceChangeParamsInput = {
+      ...PARAMS,
+      mode: "amount_decrease",
+      value: 200,
+      apply_to: "regular",
+    };
+    const rows = [productRow("p1", 100), productRow("p2", 150)];
+    state.selectResults.push(rows);
+
+    const previewResponse = await preview(params);
+    const previewBody = (await previewResponse.json()) as {
+      preview_token: string;
+      counts: Row;
+      rows: Array<{ status: string; reason: string | null }>;
+    };
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewBody.counts).toEqual({
+      ok: 0,
+      unchanged: 0,
+      blocked: 2,
+    });
+    expect(previewBody.rows).toHaveLength(2);
+    expect(
+      previewBody.rows.every((row) => row.status === "blocked"),
+    ).toBe(true);
+    expect(
+      previewBody.rows.every((row) =>
+        row.reason?.includes("below $1.00"),
+      ),
+    ).toBe(true);
+    expect(state.writes).toBe(0);
+
+    state.selectResults.push(rows);
+
+    const applyResponse = await apply(
+      params,
+      previewBody.preview_token,
+    );
+    const applyBody = (await applyResponse.json()) as {
+      error: string;
+    };
+
+    expect(applyResponse.status).toBe(400);
+    expect(applyBody.error).toContain("No prices would change");
+    expect(state.writes).toBe(0);
+    expect(state.inserts).toHaveLength(0);
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it("applies only ok rows when some products fall below the minimum", async () => {
+    const params: PriceChangeParamsInput = {
+      ...PARAMS,
+      mode: "amount_decrease",
+      value: 50,
+      apply_to: "regular",
+    };
+    const rows = [productRow("p1", 1000), productRow("p2", 100)];
+    const token = await previewToken(params, rows);
+    state.selectResults.push(rows);
+
+    const response = await apply(params, token);
+    const body = (await response.json()) as {
+      item_count: number;
+      counts: Row;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.item_count).toBe(1);
+    expect(body.counts).toEqual({ ok: 1, unchanged: 0, blocked: 1 });
+    expect(
+      state.updates.filter(
+        (entry) => entry.values.priceCents !== undefined,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        values: { priceCents: 950, salePriceCents: null },
+      }),
+    ]);
+    expect(state.inserts[1].values).toEqual([
+      expect.objectContaining({
+        productId: "p1",
+        oldPriceCents: 1000,
+        newPriceCents: 950,
+      }),
+    ]);
+    expect(
+      state.inserts.some(
+        (entry) =>
+          JSON.stringify(entry.values).includes("price_change.apply") &&
+          JSON.stringify(entry.values).includes('"blocked":1'),
+      ),
+    ).toBe(true);
+  });
+
+  it("previews a sale conflict as blocked and refuses to apply", async () => {
+    const params: PriceChangeParamsInput = {
+      ...PARAMS,
+      mode: "percent_decrease",
+      value: 50,
+      apply_to: "regular",
+    };
+    const rows = [
+      productRow("p1", 1000, 900),
+      productRow("p2", 2000, 1500),
+    ];
+    state.selectResults.push(rows);
+
+    const previewResponse = await preview(params);
+    const previewBody = (await previewResponse.json()) as {
+      preview_token: string;
+      counts: Row;
+      rows: Array<{ status: string; reason: string | null }>;
+    };
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewBody.counts).toEqual({
+      ok: 0,
+      unchanged: 0,
+      blocked: 2,
+    });
+    expect(
+      previewBody.rows.every(
+        (row) =>
+          row.status === "blocked" &&
+          row.reason?.includes("no longer be below"),
+      ),
+    ).toBe(true);
+
+    state.selectResults.push(rows);
+
+    const applyResponse = await apply(
+      params,
+      previewBody.preview_token,
+    );
+    const applyBody = (await applyResponse.json()) as {
+      error: string;
+    };
+
+    expect(applyResponse.status).toBe(400);
+    expect(applyBody.error).toContain("No prices would change");
+    expect(state.writes).toBe(0);
+  });
+
+  it("previews an increase above the maximum as blocked and refuses to apply", async () => {
+    const params: PriceChangeParamsInput = {
+      ...PARAMS,
+      mode: "amount_increase",
+      value: 1,
+      apply_to: "regular",
+    };
+    const rows = [productRow("p1", 100_000_000)];
+    state.selectResults.push(rows);
+
+    const previewResponse = await preview(params);
+    const previewBody = (await previewResponse.json()) as {
+      preview_token: string;
+      counts: Row;
+      rows: Array<{ status: string; reason: string | null }>;
+    };
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewBody.counts).toEqual({
+      ok: 0,
+      unchanged: 0,
+      blocked: 1,
+    });
+    expect(previewBody.rows[0].reason).toContain(
+      "above $1,000,000.00",
+    );
+
+    state.selectResults.push(rows);
+
+    const applyResponse = await apply(
+      params,
+      previewBody.preview_token,
+    );
+    const applyBody = (await applyResponse.json()) as {
+      error: string;
+    };
+
+    expect(applyResponse.status).toBe(400);
+    expect(applyBody.error).toContain("No prices would change");
+    expect(state.writes).toBe(0);
+  });
+
   it("rejects a tampered token", async () => {
     const token = await previewToken(PARAMS, [productRow("p1", 1000)]);
     const tampered = `${token.slice(0, -1)}${
