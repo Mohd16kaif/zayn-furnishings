@@ -15,6 +15,7 @@
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:price-change": "node scripts/check-price-change.mjs",
     "check:e2e": "node scripts/check-e2e.mjs",
+    "audit:site": "node scripts/audit-site.mjs",
     "docker:build:api": "node scripts/docker-build.mjs api",
     "docker:build:web": "node scripts/docker-build.mjs web",
     "docker:smoke": "node scripts/docker-smoke.mjs",
