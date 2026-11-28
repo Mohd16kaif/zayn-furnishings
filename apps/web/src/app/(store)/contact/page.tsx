@@ -1,12 +1,42 @@
-import { PlaceholderPage } from "@/components/storefront/placeholder-page";
+import type { Metadata } from "next";
+import { getSettings } from "@/lib/publicApi";
+import { placeholderPageMetadata } from "@/lib/pageMetadata";
 
 export const instant = false;
 
-export default function ContactPage() {
+export const metadata: Metadata = placeholderPageMetadata(
+  "contact",
+  "Contact",
+  "Contact Zayn Furnishings by phone or email when store contact details are configured.",
+);
+
+export default async function ContactPage() {
+  const { data: settings } = await getSettings();
+  const phoneHref = settings.phone
+    ? `tel:${settings.phone.replace(/[^\d+]/g, "")}`
+    : null;
+
   return (
-    <PlaceholderPage
-      title="Contact"
-      body="Questions about an order or your space? Our team replies within one business day."
-    />
+    <section className="zf-section zf-page">
+      <div className="zf-container">
+        <h1>Contact</h1>
+        {settings.phone || settings.email ? (
+          <div className="zf-page__contact">
+            {settings.phone && phoneHref ? (
+              <p>
+                <a href={phoneHref}>{settings.phone}</a>
+              </p>
+            ) : null}
+            {settings.email ? (
+              <p>
+                <a href={`mailto:${settings.email}`}>{settings.email}</a>
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p>Contact details are not available yet.</p>
+        )}
+      </div>
+    </section>
   );
 }

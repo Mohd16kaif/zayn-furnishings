@@ -1,27 +1,28 @@
 import type { MetadataRoute } from "next";
 import { connection } from "next/server";
+import { isPagePublished, type PublishedPageKey } from "@/config/pages";
 import { IS_STAGING } from "@/lib/appEnv";
+import { SITE_URL } from "@/lib/pageMetadata";
 import { getCategories, getProducts, getSettings } from "@/lib/publicApi";
 
 const PRODUCT_PAGE_SIZE = 48;
 const MAX_PRODUCT_PAGES = 1000;
 
-const baseUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+type StaticPage = {
+  path: string;
+  key?: PublishedPageKey;
+};
 
-const staticPaths = [
-  "",
-  "/about",
-  "/contact",
-  "/faq",
-  "/delivery",
-  "/returns",
-  "/privacy",
-  "/terms",
-  "/accessibility",
-  "/cart",
-  "/account",
-  "/wishlist",
+const STATIC_PAGES: StaticPage[] = [
+  { path: "" },
+  { path: "/about", key: "about" },
+  { path: "/contact", key: "contact" },
+  { path: "/faq", key: "faq" },
+  { path: "/delivery", key: "delivery" },
+  { path: "/returns", key: "returns" },
+  { path: "/privacy", key: "privacy" },
+  { path: "/terms", key: "terms" },
+  { path: "/accessibility", key: "accessibility" },
 ];
 
 function categorySlugs(
@@ -101,24 +102,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   const productUrls = Array.from(new Set(products)).map((slug) => ({
-    url: `${baseUrl}/p/${slug}`,
+    url: `${SITE_URL}/p/${slug}`,
     lastModified: now,
     changeFrequency: "weekly" as const,
   }));
 
   return [
-    ...staticPaths.map((path) => ({
-      url: `${baseUrl}${path}`,
+    ...STATIC_PAGES.filter(
+      (page) => !page.key || isPagePublished(page.key),
+    ).map((page) => ({
+      url: `${SITE_URL}${page.path}`,
       lastModified: now,
       changeFrequency: "weekly" as const,
     })),
     ...conditionalPaths.map((path) => ({
-      url: `${baseUrl}${path}`,
+      url: `${SITE_URL}${path}`,
       lastModified: now,
       changeFrequency: "weekly" as const,
     })),
     ...categorySlugs(categories).map((slug) => ({
-      url: `${baseUrl}/c/${slug}`,
+      url: `${SITE_URL}/c/${slug}`,
       lastModified: now,
       changeFrequency: "weekly" as const,
     })),

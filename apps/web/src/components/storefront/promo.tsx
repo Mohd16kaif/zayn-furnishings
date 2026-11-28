@@ -11,20 +11,12 @@ export type PromoCard = {
   image?: string | null;
 };
 
-const PREVIEW_CARD: PromoCard = {
-  eyebrow: "By appointment · January",
-  title: "Winter Showcase",
-  body: "A private preview of new silhouettes, limited-run weaves, and one-of-a-kind walnut pieces. Meet our design team and plan your next room over a quiet hour in the studio.",
-  buttonText: "Reserve your consultation",
-  linkUrl: "#footer",
-};
-
 export function Promo({
   image,
-  card = PREVIEW_CARD,
+  card,
 }: {
   image?: string | null;
-  card?: PromoCard;
+  card: PromoCard;
 }) {
   const background = card.image ?? image ?? null;
 

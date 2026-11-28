@@ -42,13 +42,11 @@ const STATIC_ROUTES = [
   "/accessibility",
   "/cart",
   "/account",
-  "/wishlist",
   "/sale",
   "/new",
   "/search",
   "/checkout",
   "/404",
-  "/design-preview",
   "/order/ZF-000000",
   "/search?q=sofa",
 ];

@@ -12,7 +12,7 @@ export type ProductCardData = {
   category?: string | null;
   priceCents?: number;
   salePriceCents?: number | null;
-  /** Pre-formatted overrides (design preview keeps its own labels). */
+  /** Pre-formatted price overrides. */
   priceLabel?: string;
   salePriceLabel?: string;
   inStock?: boolean;

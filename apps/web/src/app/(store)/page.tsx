@@ -11,6 +11,7 @@ import {
   PUBLIC_SETTINGS_TAG,
 } from "@/lib/publicApi";
 import { formatCents } from "@/lib/money";
+import { buildPageMetadata } from "@/lib/pageMetadata";
 import { availableHomeImage } from "@/lib/homeImages";
 import { Hero, type HeroSlide } from "@/components/storefront/hero";
 import { TrustStrip, type TrustItem } from "@/components/storefront/trust-strip";
@@ -65,22 +66,27 @@ async function loadHomeData() {
   };
 }
 
-export const metadata: Metadata = {
-  title: {
-    absolute: "Zayn Furnishings | Quiet luxury furniture for the American home",
-  },
-  description:
-    "Considered furniture for the rooms you use every day. Shop living room, bedroom, dining, office, and outdoor pieces with live availability and delivery to your ZIP code.",
-  alternates: { canonical: "/" },
-  openGraph: {
-    title: "Zayn Furnishings | Quiet luxury furniture for the American home",
+export async function generateMetadata(): Promise<Metadata> {
+  const { data: settings } = await getSettings();
+
+  if (!settings.store_open) {
+    return buildPageMetadata({
+      title: `${settings.store_name} | Coming soon`,
+      absoluteTitle: true,
+      description: `${settings.store_name} is preparing to open. Please check back soon.`,
+      path: "/",
+      noindex: true,
+    });
+  }
+
+  return buildPageMetadata({
+    title: "Zayn Furnishings",
+    absoluteTitle: true,
     description:
-      "Considered furniture for the rooms you use every day. Live availability and delivery to your ZIP code.",
-    url: "/",
-    siteName: "Zayn Furnishings",
-    type: "website",
-  },
-};
+      "Shop living room, bedroom, dining, office, and outdoor furniture at Zayn Furnishings. Browse available pieces by room and category.",
+    path: "/",
+  });
+}
 
 const TONES = [1, 2, 3, 4, 5, 6] as const;
 
@@ -183,16 +189,6 @@ export default async function HomePage() {
             )}`
           : "Delivery calculated at checkout",
       icon: "truck",
-    },
-    {
-      title: "Easy returns",
-      copy: "A simple, straightforward process",
-      icon: "return",
-    },
-    {
-      title: "Secure checkout",
-      copy: "Encrypted, always",
-      icon: "shield",
     },
   ];
 
@@ -310,7 +306,19 @@ export default async function HomePage() {
         />
       ) : null}
 
-      {heroSlides.length > 0 ? <Hero slides={heroSlides} /> : null}
+      {heroSlides.length > 0 ? (
+        <Hero slides={heroSlides} />
+      ) : (
+        <section className="zf-hero" aria-labelledby="home-title">
+          <div className="zf-container zf-hero__inner">
+            <div className="zf-hero__copy">
+              <h1 className="zf-hero__title" id="home-title">
+                {settings.store_name}
+              </h1>
+            </div>
+          </div>
+        </section>
+      )}
       <TrustStrip items={trustItems} />
       <Rooms tiles={roomTiles} />
       <Signature />
@@ -327,7 +335,11 @@ export default async function HomePage() {
       ) : null}
       {promoCard ? <Promo card={promoCard} /> : null}
       <InfoCards cards={infoCards} />
-      <Faq faqs={faqs} />
+      <Faq
+        faqs={faqs}
+        email={settings.email}
+        phone={settings.phone}
+      />
     </>
   );
 }

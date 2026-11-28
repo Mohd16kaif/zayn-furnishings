@@ -2,16 +2,27 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentCustomer } from "@/lib/authServer";
 import { fetchCustomerOrder } from "@/lib/orderServer";
+import { buildPageMetadata } from "@/lib/pageMetadata";
 import { OrderConfirmation } from "@/components/storefront/order-confirmation";
 import { SignIn } from "@/components/storefront/sign-in";
 import { StoreNotFound } from "@/components/storefront/store-not-found";
 
 export const instant = false;
 
-export const metadata: Metadata = {
-  title: "Order",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ orderNumber: string }>;
+}): Promise<Metadata> {
+  const { orderNumber } = await params;
+
+  return buildPageMetadata({
+    title: `Order ${orderNumber}`,
+    description: `View the status and details of Zayn Furnishings order ${orderNumber}.`,
+    path: `/order/${orderNumber}`,
+    noindex: true,
+  });
+}
 
 export default async function OrderPage({
   params,

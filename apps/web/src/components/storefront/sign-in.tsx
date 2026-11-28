@@ -273,7 +273,7 @@ export function SignIn({
               inputMode="tel"
               autoComplete="tel"
               className="zf-input"
-              placeholder="(555) 555-0100"
+              placeholder="Phone number"
               value={phone}
               disabled={busy}
               onChange={(event) => {

@@ -11,12 +11,6 @@ export type CraftStat = {
   label: string;
 };
 
-const PREVIEW_STATS: CraftStat[] = [
-  { value: 10, suffix: "yr", label: "Frame warranty" },
-  { value: 100, suffix: "%", label: "Hand-finished details" },
-  { value: 100, suffix: "%", label: "Delivered to your room" },
-];
-
 function CountUp({ value, suffix = "", label }: CraftStat) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-10%" });
@@ -61,16 +55,15 @@ function CountUp({ value, suffix = "", label }: CraftStat) {
 }
 
 /**
- * Craft section. `stats` should contain facts the storefront can compute
- * (active product count, collection count). Do not pass unverified claims
- * (warranty years, finish percentages) - see the TODO below.
+ * Collection facts section. `stats` must contain facts the storefront can
+ * compute (active product count, collection count), never unverified claims.
  */
 export function Craft({
   image,
-  stats = PREVIEW_STATS,
+  stats,
 }: {
   image?: string | null;
-  stats?: CraftStat[];
+  stats: CraftStat[];
 }) {
   return (
     <section className="zf-section" id="craft" aria-labelledby="craft-title">
@@ -80,33 +73,20 @@ export function Craft({
             <div className="zf-craft__media">
               <SmartImage
                 src={image ?? undefined}
-                alt="A craftsperson hand-finishing a walnut furniture frame"
+                alt=""
                 sizes="(max-width: 1023px) 92vw, 46vw"
                 tone={4}
-                label="The craft"
+                label="Collection"
               />
             </div>
           </Reveal>
 
           <Reveal className="zf-craft__copy" delay={0.08}>
-            <span className="zf-eyebrow">Made slowly, made well</span>
+            <span className="zf-eyebrow">At a glance</span>
             <h2 className="zf-heading" id="craft-title">
-              The craft behind every piece.
+              The collection in numbers.
             </h2>
-            <p className="zf-lede">
-              We work with a small circle of workshops who still measure,
-              join, and finish by hand. Frames are kiln-dried and corner
-              blocked for decades of everyday use. Fabrics are chosen for the
-              way they soften with time, not just the way they photograph.
-            </p>
-            <p className="zf-lede">
-              The result is furniture with presence, but without noise.
-              Pieces that settle into a room and quietly become part of the
-              family.
-            </p>
             {stats.length > 0 ? (
-              // TODO(launch): add real craft claims (warranty, finishes,
-              // delivery percentages) only after client confirmation.
               <div className="zf-craft__stats">
                 {stats.map((stat) => (
                   <CountUp key={stat.label} {...stat} />

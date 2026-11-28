@@ -101,6 +101,12 @@ const checks = [
     script: path.join(REPO_ROOT, "scripts", "check-idempotency.mjs"),
     requiresToken: true,
   },
+  {
+    name: "launch basics",
+    cwd: REPO_ROOT,
+    script: path.join(REPO_ROOT, "scripts", "check-launch-basics.mjs"),
+    requiresToken: true,
+  },
 ];
 
 console.log(`Running server-based checks against ${BASE_URL}`);

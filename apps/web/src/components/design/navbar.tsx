@@ -13,6 +13,7 @@ import type {
   PublicCategoryNode,
   PublicStoreSettings,
 } from "@zayn/shared";
+import { FEATURES } from "@/config/features";
 import { formatCents } from "@/lib/money";
 import { useCartCount } from "./cart-provider";
 import { useCustomer } from "./customer-provider";
@@ -669,13 +670,15 @@ export function Navbar({
                 >
                   <UserIcon />
                 </Link>
-                <Link
-                  className="zf-icon-btn zf-nav__action--optional"
-                  href="/wishlist"
-                  aria-label="Wishlist"
-                >
-                  <HeartIcon />
-                </Link>
+                {FEATURES.wishlist ? (
+                  <Link
+                    className="zf-icon-btn zf-nav__action--optional"
+                    href="/wishlist"
+                    aria-label="Wishlist"
+                  >
+                    <HeartIcon />
+                  </Link>
+                ) : null}
                 <ThemeToggle />
                 <CartIconLink count={cartCount} />
               </div>
@@ -1091,14 +1094,16 @@ export function Navbar({
                       Account
                     </Link>
                   </li>
-                  <li>
-                    <Link
-                      href="/wishlist"
-                      onClick={() => closeDrawer(false)}
-                    >
-                      Wishlist
-                    </Link>
-                  </li>
+                  {FEATURES.wishlist ? (
+                    <li>
+                      <Link
+                        href="/wishlist"
+                        onClick={() => closeDrawer(false)}
+                      >
+                        Wishlist
+                      </Link>
+                    </li>
+                  ) : null}
                 </ul>
               </div>
 

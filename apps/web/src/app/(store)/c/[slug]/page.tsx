@@ -11,6 +11,12 @@ import {
   pieceCountLabel,
 } from "@/lib/catalogFilters";
 import { getCategories, getProducts } from "@/lib/publicApi";
+import {
+  buildPageMetadata,
+  fallbackDescription,
+  fitDescription,
+  titleSegment,
+} from "@/lib/pageMetadata";
 import { ActiveFilters } from "@/components/storefront/active-filters";
 import { CatalogFilterPanel } from "@/components/storefront/catalog-filters";
 import { CatalogResults } from "@/components/storefront/catalog-results";
@@ -107,35 +113,28 @@ export async function generateMetadata({
   const match = findCategory(data, slug);
 
   if (!match) {
-    return {
+    return buildPageMetadata({
       title: "Collection not found",
-      robots: { index: false, follow: true },
-    };
+      description:
+        "The collection you requested could not be found at Zayn Furnishings.",
+      path: `/c/${slug}`,
+      noindex: true,
+    });
   }
 
-  const { category, parents } = match;
+  const { category } = match;
   const seo = categorySeo(category);
-  const title =
-    seo.title ??
-    (parents.length > 0
-      ? `${category.name} — ${parents[parents.length - 1].name}`
-      : category.name);
-  const description =
-    seo.description ??
-    category.description ??
-    `${category.name} — shop the collection at Zayn Furnishings.`;
+  const title = titleSegment(category.name);
+  const description = fitDescription(
+    [seo.description, category.description],
+    fallbackDescription(category.name, "category"),
+  );
 
-  return {
+  return buildPageMetadata({
     title,
     description,
-    alternates: { canonical: `/c/${category.slug}` },
-    openGraph: {
-      title,
-      description,
-      url: `/c/${category.slug}`,
-      type: "website",
-    },
-  };
+    path: `/c/${category.slug}`,
+  });
 }
 
 export default async function CategoryPage({

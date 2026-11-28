@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { products as previewProducts } from "@/app/design-preview/preview-data";
 import { Reveal } from "@/components/motion/reveal";
 import { ArrowLeftIcon, ArrowRightIcon } from "@/components/design/icons";
 import {
   ProductCard,
   type ProductCardData,
-  type ProductTone,
 } from "./product-card";
 
 type DragState = {
@@ -16,28 +14,13 @@ type DragState = {
   scrollLeft: number;
 };
 
-const PREVIEW_PRODUCTS: ProductCardData[] = previewProducts.map(
-  (product, index) => ({
-    id: `preview-${index}`,
-    name: product.name,
-    category: product.category,
-    priceLabel: product.price,
-    salePriceLabel: product.salePrice,
-    inStock: !product.soldOut,
-    tone: product.tone as ProductTone,
-  }),
-);
-
-const PREVIEW_LEDE =
-  "Sample product cards for the preview. In the storefront these will connect to live inventory, finishes, and lead times.";
-
 export function FeaturedCarousel({
-  products = PREVIEW_PRODUCTS,
-  heading = "The pieces everyone is living with.",
-  lede = PREVIEW_LEDE,
+  products,
+  heading,
+  lede = null,
 }: {
-  products?: ProductCardData[];
-  heading?: string;
+  products: ProductCardData[];
+  heading: string;
   lede?: string | null;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);

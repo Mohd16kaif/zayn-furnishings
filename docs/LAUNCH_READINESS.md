@@ -28,11 +28,11 @@ Data states:
 Top 10 launch blockers:
 
 1. **Legal, returns, delivery, accessibility, about, contact and FAQ pages are placeholders.** Several are indexable and in the sitemap. A lawyer/client must supply the text; the developer must wire it. No legal text is proposed here.
-2. **Production-only rule is not met in code:** `apps/api/src/db/seed.ts` still contains SAMPLE products, sample home copy, white-glove/return claims and sample FAQs, and `apps/web/src/app/design-preview/` contains sample products and sample claims. The seed is refused when `NODE_ENV=production`, but the demo data still exists in the repository.
+2. **Production-only rule is not met in code:** `apps/api/src/db/seed.ts` still contains SAMPLE products, sample home copy, white-glove/return claims and sample FAQs. The seed is refused when `NODE_ENV=production`, but the demo data still exists in the repository.
 3. **Order creation has no client/API idempotency key.** Double-submit and network retries can create duplicate pending orders. The pay button is disabled while pending, but that does not cover a lost response or a second tab. Refunds are already idempotent.
 4. **The newsletter is not wired.** It stores nothing yet tells the visitor "Thanks, we will be in touch." The wishlist icon and page are also visible while the feature does not exist.
 5. **Favicon and Apple touch icon are missing.** `/favicon.ico` and `/apple-touch-icon.png` both return 404.
-6. **Generic/duplicate metadata.** Nine routes use only "Zayn Furnishings" as the title, 13 routes share one global description, `/design-preview` repeats the brand, the home title is 63 chars, and the fresh home has no h1 because the hero is content-driven and empty.
+6. **Generic/duplicate metadata.** Nine routes use only "Zayn Furnishings" as the title, 13 routes share one global description, the home title is 63 chars, and the fresh home has no h1 because the hero is content-driven and empty.
 7. **Mobile touch and hero layout.** Icon buttons are 38x38 (some 32x38), footer links are 14-19px tall, hero dots are 24x2, admin mobile nav links are 26px tall. At 390px the hero arrows overlap the primary hero CTA by 1600 px². Tap targets are below the requested 44px minimum on every audited page.
 8. **Footer/navigation has duplicate destinations and fake social anchors.** "Our Story/Craftsmanship/Journal" all go to `/about`, four links go to `/contact`, "Care Guide/Warranty/FAQ" all go to `/faq`, and Instagram/Pinterest/Journal all point at `#footer`.
 9. **Unconfirmed claims are visible.** "Easy returns" is on the fresh home; the FAQ hard-codes `hello@zaynfurnishings.example`; delivery page says "White-glove"; sample data includes warranty/returns language. These must be confirmed or removed.
@@ -74,22 +74,22 @@ Top 10 launch blockers:
 | C1 | Remove horizontal scrolling | ALREADY DONE | done | Audit: 0 overflowing pages at 360/390/1280 in both data states | No horizontal scrollbar found. |
 | C2 | Find broken links | ALREADY DONE | done | Audit: 0 broken internal links; 0 external links; 1 `mailto:`; 0 `tel:`; 0 empty/hash-only hrefs | No 404/5xx internal links. The fake same-page social anchors are a C11/C7 problem, not a broken URL. |
 | C3 | Add a mobile menu | ALREADY DONE | done | `components/design/navbar.tsx:1000-1160`; drawer audit: opened, body scroll locked, `aria-modal=true`, close button present, 8 rows, no row below 44px | Mobile menu works and traps focus. |
-| C4 | Add a favicon | BUILD | P2 / S | No icon files in `apps/web/public`; audit `/favicon.ico=404`, `/apple-touch-icon.png=404`; no icon metadata | Add a real brand mark in both sizes and return 200. |
-| C5 | Fix page titles | BUILD | P2 / S | 9 routes title "Zayn Furnishings"; `/design-preview` is double-branded; home is 63 chars; fresh home has h1=0; checkout h1=0 | Unique titles, brand once, under 60 chars, and a real h1 per page. |
-| C6 | Add meta descriptions | BUILD | P2 / S | 13 routes share `"Quiet luxury for the American home. Furniture made to be lived in."`; search/page share one; home is 169 chars; `/cart` 40, `/search` 36, five categories <50 | Write page-specific descriptions in the 50-160 char range. |
-| C7 | Fix footer links | BUILD | P2 / S | `footer.tsx:29-48` duplicates destinations; `footer.tsx:115-118` fake social links to `#footer` | Make each label honest: keep a real target or remove it. Do not promise a Journal/Warranty page that is not there. |
+| C4 | Add a favicon | DONE in B3 | P2 / S | `apps/web/src/app/favicon.ico` (16/32/48), `icon.svg`, `icon.png` 512 and `apple-icon.png` 180; Next emits the links; all return 200, including while the store is closed | `scripts/generate-icons.mjs` regenerates them. `/apple-touch-icon.png` is not used; the Next convention emits `/apple-icon.png` as the apple-touch-icon. |
+| C5 | Fix page titles | DONE in B3 | P2 / S | Unique title on every public route, brand once, <=60 chars, one h1 per public page and one for the closed-store screen; checked by `scripts/check-launch-basics.mjs` on fresh and dev data | The home fallback h1 uses the store name when there is no hero content. |
+| C6 | Add meta descriptions | DONE in B3 | P2 / S | Every public route has a unique 50-160 character description built from real page/product/category data or a factual fallback | Checked by `scripts/check-launch-basics.mjs`; the shared global description was removed. |
+| C7 | Fix footer links | DONE in B1 | P2 / S | `footer.tsx:29-48` duplicates destinations; `footer.tsx:115-118` fake social links to `#footer` | Make each label honest: keep a real target or remove it. Do not promise a Journal/Warranty page that is not there. |
 | C8 | Add a custom 404 page | ALREADY DONE | done | `app/(store)/not-found.tsx`, `app/(store)/404/page.tsx`, `components/storefront/store-not-found.tsx`; audit `/404` returns 404 with the custom screen | Works. |
 | C9 | Fix the copyright year | ALREADY DONE | done | `footer.tsx:15-23, 177` uses the current year after hydration; audit shows 2026 | Dynamic year works. The server-rendered fallback is blank for one frame; acceptable. |
 | C10 | Compress images | BUILD | P3 / S | `apps/web/public/images/home/room-bedroom.jpg` 475 KB, `hero-1.jpg` 338 KB, `hero-2.jpg` 303 KB; Next serves optimized WebP when `next/image` is used, and audit saw 0 images over 300 KB served | Compress the three source originals; runtime optimization already protects visitors. |
-| C11 | Fix broken buttons | BUILD | P2 / M | Newsletter is fake (`footer.tsx:62-68, 170`); wishlist icon/drawer link go to placeholder (`navbar.tsx:673-676, 1095-1098`); social anchors do nothing; admin "Deliveries/Customers" are "Coming soon" (`admin-shell.tsx:85-103, 155-169`) | Hide or wire the newsletter and wishlist; remove fake social links; keep "Coming soon" only where the owner cannot mistake it for a working feature. |
+| C11 | Fix broken buttons | DONE in B1 | P2 / M | Newsletter is fake (`footer.tsx:62-68, 170`); wishlist icon/drawer link go to placeholder (`navbar.tsx:673-676, 1095-1098`); social anchors do nothing; admin "Deliveries/Customers" are "Coming soon" (`admin-shell.tsx:85-103, 155-169`) | Hide or wire the newsletter and wishlist; remove fake social links; keep "Coming soon" only where the owner cannot mistake it for a working feature. |
 | C12 | Add success messages | ALREADY DONE | done | Checkout order confirmation, sign-in, admin login, product/category/content/delivery/settings forms, price apply, refund all render success feedback | Existing real forms have success feedback. The false newsletter success is tracked in C11. |
 | C13 | Add error messages | ALREADY DONE | done | Checkout, sign-in, admin login, admin CRUD forms and refund dialog render `role="alert"`/field errors; network fallbacks exist | Existing real forms have error feedback. |
-| C14 | Remove placeholder text | DECISION | P1 / client + M code | Placeholder pages: `app/(store)/about`, `accessibility`, `contact`, `delivery`, `faq`, `privacy`, `returns`, `terms`, `wishlist`; `apps/api/src/db/seed.ts:62-172, 314-435`; `app/design-preview/preview-data.ts:87-191`; home `Easy returns` copy at `app/(store)/page.tsx:187-191` | Ask the client/lawyer for real copy and confirm or remove delivery/return/warranty claims. Then replace placeholders and remove SAMPLE data from code. No legal text is proposed here. |
-| C15 | Remove unused navigation | BUILD | P2 / S | `footer.tsx:29-48` (duplicate company/care destinations); fake social block `115-118`; wishlist navigation | Same finding as C7. Remove/merge unused labels; do not keep dead-end editorial links. |
+| C14 | Remove placeholder text | PARTIAL after B1 | P1 / client + M code | Placeholder info/legal pages are noindex and removed from the sitemap; the wishlist is hidden; `apps/api/src/db/seed.ts:62-172, 314-435` remains the only SAMPLE source. | The pages still need real client/lawyer text. See the B1/B3 status section below. No legal text is proposed here. |
+| C15 | Remove unused navigation | DONE in B1 | P2 / S | `footer.tsx:29-48` (duplicate company/care destinations); fake social block `115-118`; wishlist navigation | Same finding as C7. Remove/merge unused labels; do not keep dead-end editorial links. |
 | C16 | Fix mobile overflow | ALREADY DONE | done | Audit: 0 overflow at 360 and 390 across all 101 dev routes/95 fresh routes | Works. |
 | C17 | Make the logo clickable | ALREADY DONE | done | `navbar.tsx:638-645`; footer logo `footer.tsx:99-103` | Works. |
 | C18 | Make the phone number clickable (`tel:`) | ALREADY DONE | done | `navbar.tsx:592-596, 1104-1111`; footer `footer.tsx:126-133`; ComingSoon `coming-soon.tsx:21-27`; audit shows 0 tel links because no phone is configured | Code is ready; the client must supply the real public phone. |
-| C19 | Make the email clickable (`mailto:`) | BUILD | P2 / S | Footer conditional `mailto:` works; FAQ hard-codes `hello@zaynfurnishings.example` at `components/storefront/faq.tsx:38`; contact page has no email/phone/form | Use `settings.email`, delete the example address, and put real contact methods on `/contact`. |
+| C19 | Make the email clickable (`mailto:`) | DONE in B1 | P2 / S | Footer conditional `mailto:` works; FAQ hard-codes `hello@zaynfurnishings.example` at `components/storefront/faq.tsx:38`; contact page has no email/phone/form | Use `settings.email`, delete the example address, and put real contact methods on `/contact`. |
 | C20 | Make every page mobile optimized | ALREADY DONE | done | All routes returned PASS at 360, 390 and 1280 for overflow (table in section 3); admin 390/1280 also pass | Layout fits. Tap targets and safe-area are separate U13/U14 fixes. |
 
 ## 3. Page-by-page audit findings
@@ -206,7 +206,6 @@ The dev home is representative of the intended look but is sample data: SAMPLE p
 | `/checkout` | P | P | P | h1=0 no-canonical no-og |
 | `/contact` | P | P | P | no-canonical no-og |
 | `/delivery` | P | P | P | no-canonical no-og |
-| `/design-preview` | P | P | P | no-canonical no-og |
 | `/faq` | P | P | P | no-canonical no-og |
 | `/new` | P | P | P | OK |
 | `/order/ZF-000000` | P | P | P | no-canonical no-og |
@@ -239,7 +238,7 @@ Admin:
 
 ### Metadata, links, and structured data
 
-- **Titles:** 0 empty, 9 generic "Zayn Furnishings", `/design-preview` is "Design Preview | Zayn Furnishings | Zayn Furnishings". Home 63 chars, one category 62. All other audited titles include the brand.
+- **Titles:** 0 empty, 9 generic "Zayn Furnishings". Home 63 chars, one category 62. All other audited titles include the brand. B3 replaces these with the shared metadata helper.
 - **Descriptions:** 0 missing, but 13 routes share the global description, 2 share the search description, home is 169 chars, `/cart` 40, `/search` 36, five category descriptions are 47-49. 17 routes have no Open Graph tags (mostly static/utility pages).
 - **H1:** Home is 0 on fresh data; `/checkout` is 0 in both runs (empty-cart state); all other storefront pages have 1. All admin pages have 2 because the shell adds "Admin".
 - **Canonical:** present on home, sale, new, categories and products. Missing on about/contact/legal/account/cart/checkout/search/order/wishlist/404.
@@ -247,7 +246,7 @@ Admin:
 - **Internal links:** 0 broken, 0 empty, 0 hash-only, 1 `mailto:` (the example address in the FAQ), 0 `tel:`.
 - **Duplicate destinations:** `/about` (Our Story, Craftsmanship, Journal), `/contact` (Design Services, Trade Program, Careers, Contact), `/faq` (Care Guide, Warranty, FAQ), `#footer` (Instagram, Pinterest, Journal). No two full pages had identical body text; the problem is duplicate destinations and fake links.
 - **Sitemap:** `/robots.txt` and `/sitemap.xml` return 200. Sitemap includes `/cart`, `/account` and `/wishlist`, which are noindex, and includes placeholder pages. `/new` and `/sale` are conditional on stock. Fix in B3.
-- **Noindex:** admin is noindex on all pages; search, cart, checkout, account, order lookup, 404 and design-preview are noindex. Legal/about/contact/FAQ/wishlist are currently indexable placeholders. Staging and closed-store noindex is implemented in `robots.ts:10`, `proxy.ts:217-218`, and root metadata, but the production/staging runtime was not deployed, so the header behavior is **Unverified**.
+- **Noindex:** admin is noindex on all pages; search, cart, checkout, account, order lookup and 404 are noindex. B1 makes about/contact/FAQ and all placeholder policy pages noindex; the wishlist now returns 404. Staging and closed-store noindex is implemented in `robots.ts:10`, `proxy.ts:217-218`, and root metadata, but the production/staging runtime was not deployed, so the header behavior is **Unverified**.
 - **Icons:** `/favicon.ico` 404, `/apple-touch-icon.png` 404. No icon links in HTML.
 
 ### Images, layout shift, and fonts
@@ -290,7 +289,6 @@ The source scan found 60 "placeholder" hits (many are form placeholders and CSS 
 - Placeholder pages and `PlaceholderPage` component.
 - Footer newsletter TODO and `hello@zaynfurnishings.example`.
 - `apps/api/src/db/seed.ts` SAMPLE products/content/FAQ and warranty/white-glove/returns language.
-- `app/design-preview/preview-data.ts` SAMPLE products, testimonials and claims; the design preview is noindex but publicly reachable.
 - Admin "Coming soon" sidebar.
 - Home "Easy returns" claim with no confirmed policy.
 - Form hints such as `owner@example.com`, `(555) 555-0100`, `0.00`, `10001` are input placeholders, not displayed business claims. Keep them unless the owner wants different examples.
@@ -429,7 +427,6 @@ None behaves like a bottom sheet. Swipe-to-dismiss is not implemented. A new bot
 - **Cart:** honest empty state. Checkout redirects to cart when empty.
 - **Wishlist:** placeholder "Save favorite pieces here - wishlists arrive with the catalog." The icon should be hidden until the feature works.
 - **404:** custom, honest, with back-to-shop/search links.
-- **Design preview:** sample products and sample claims, noindex but publicly reachable. Remove or protect before launch.
 
 ### 5.2 Legal, company and support copy
 
@@ -490,7 +487,7 @@ A lawyer/owner must supply privacy (including CCPA), terms of sale, returns, del
 
 ### Developer
 
-- [ ] Replace all placeholder pages with real, owner-approved copy; remove SAMPLE data from `seed.ts` and `design-preview`; remove or protect the design preview in production.
+- [ ] Replace all placeholder pages with real, owner-approved copy; remove SAMPLE data from `seed.ts` when it is no longer needed.
 - [ ] Add favicon/apple-touch icons; unique titles, descriptions, canonical and h1 for every indexable page; remove noindex pages from the sitemap.
 - [ ] Implement order idempotency (B2) and add tests; keep refund and price-apply idempotency/concurrency tests.
 - [ ] Fix 44 px tap targets, the mobile hero overlap, `viewport-fit=cover` and safe-area padding.
@@ -609,6 +606,18 @@ Acceptance:
 - Fresh home has one h1 and a clear "not yet stocked" message or a deliberate Coming soon state.
 
 Check: extend `audit-site.mjs` with hard assertions; `check:layout` still passes.
+
+### B1/B3 launch cleanup status (2026-11-28)
+
+B1 is implemented: the temporary preview route was removed; newsletter and wishlist are hidden behind `apps/web/src/config/features.ts`; the wishlist route returns 404; fake social links and duplicate footer destinations are gone; hard-coded claims were removed; contact/FAQ/footer/Coming soon use store settings only; placeholder info/legal pages are noindex and excluded from the sitemap. `apps/web/src/config/pages.ts` has one publish flag per page (`PAGES_PUBLISHED`).
+
+B3 is implemented: original icons (`apps/web/src/app/favicon.ico`, `icon.svg`, `icon.png`, `apple-icon.png`), one shared metadata helper (`apps/web/src/lib/pageMetadata.ts`) for titles/descriptions/canonical/Open Graph/Twitter, one h1 per public page, `lang="en-US"`, Coming soon title/h1, and `scripts/check-launch-basics.mjs` wired into `pnpm check:e2e`. Icons can be regenerated with `pnpm icons:generate`.
+
+Verification (2026-11-28): the fresh-database launch-basics run passed all checks; the dev-data run failed only the forbidden-text checks because the existing dev database still contains seeded SAMPLE products and seeded FAQ claims. Those strings exist only in `apps/api/src/db/seed.ts` (which refuses `NODE_ENV=production`), not in a production code path. The normal dev database was not modified or reseeded.
+
+Pages still needing real text from the client/lawyer (all currently unpublished and noindex, but linked in the footer): about, contact (contact methods render from Settings when present), FAQ, delivery, returns, privacy, terms, accessibility. No SMS terms page exists; create one only if SMS marketing is enabled. No legal or policy text was written in this batch.
+
+The owner's content blocks of type `page` may later feed these routes; that wiring is intentionally not built yet.
 
 ### B4 - Mobile touch, safe area and hero overlap (P2)
 

@@ -7,6 +7,12 @@ import type {
 } from "@zayn/shared";
 import { formatCents } from "@/lib/money";
 import { getContentHome, getProduct, getSettings } from "@/lib/publicApi";
+import {
+  buildPageMetadata,
+  fallbackDescription,
+  fitDescription,
+  titleSegment,
+} from "@/lib/pageMetadata";
 import { DeliveryPanel } from "@/components/storefront/delivery-panel";
 import { EmptyState } from "@/components/storefront/empty-state";
 import { ProductGallery } from "@/components/storefront/product-gallery";
@@ -159,34 +165,31 @@ export async function generateMetadata({
   if (!result.ok) {
     const missing = result.error === "HTTP 404";
 
-    return {
+    return buildPageMetadata({
       title: missing ? "Product not found" : "Product unavailable",
-      robots: { index: false, follow: !missing },
-    };
+      description: missing
+        ? "The product you requested could not be found at Zayn Furnishings."
+        : "This product is temporarily unavailable at Zayn Furnishings.",
+      path: `/p/${slug}`,
+      noindex: true,
+    });
   }
 
   const product = result.data;
   const firstImage = product.images[0]?.url ?? null;
-  const title = product.seo_title?.trim() || product.name;
-  const description =
-    product.seo_description?.trim() ||
-    trimDescription(product.description, 160) ||
-    product.name;
+  const title = titleSegment(product.name);
+  const description = fitDescription(
+    [product.seo_description, product.description],
+    fallbackDescription(product.name, "product"),
+  );
 
-  return {
+  return buildPageMetadata({
     title,
     description,
-    alternates: { canonical: `/p/${product.slug}` },
-    openGraph: {
-      title,
-      description,
-      url: `/p/${product.slug}`,
-      type: "website",
-      ...(firstImage
-        ? { images: [{ url: firstImage, alt: product.name }] }
-        : {}),
-    },
-  };
+    path: `/p/${product.slug}`,
+    image: firstImage,
+    imageAlt: product.name,
+  });
 }
 
 export default async function ProductPage({ params }: ProductPageProps) {

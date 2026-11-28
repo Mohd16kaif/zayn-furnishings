@@ -1,4 +1,3 @@
-import { rooms as previewRooms } from "@/app/design-preview/preview-data";
 import { Reveal } from "@/components/motion/reveal";
 import { ArrowRightIcon } from "@/components/design/icons";
 import { SmartImage } from "@/components/design/smart-image";
@@ -14,20 +13,12 @@ export type RoomTile = {
   image?: string | null;
 };
 
-const PREVIEW_TILES: RoomTile[] = previewRooms.map((room) => ({
-  name: room.name,
-  href: "#featured",
-  count: room.pieces,
-  tone: room.tone,
-  image: null,
-}));
-
 export function Rooms({
   images = [],
-  tiles = PREVIEW_TILES,
+  tiles,
 }: {
   images?: Array<string | null>;
-  tiles?: RoomTile[];
+  tiles: RoomTile[];
 }) {
   if (tiles.length === 0) {
     return null;

@@ -1,10 +1,13 @@
 type PlaceholderPageProps = {
   title: string;
-  body: string;
+  body?: string;
 };
 
-/** Shared "coming soon" page body used by the storefront placeholder routes. */
-export function PlaceholderPage({ title, body }: PlaceholderPageProps) {
+/** Shared neutral page body for routes that do not have approved text yet. */
+export function PlaceholderPage({
+  title,
+  body = "This page is being prepared.",
+}: PlaceholderPageProps) {
   return (
     <section className="zf-section zf-page">
       <div className="zf-container">

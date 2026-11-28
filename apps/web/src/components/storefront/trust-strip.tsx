@@ -24,36 +24,13 @@ const iconComponents: Record<
   card: CardIcon,
 };
 
-const PREVIEW_ITEMS: TrustItem[] = [
-  {
-    title: "Free delivery",
-    copy: "White-glove delivery available",
-    icon: "truck",
-  },
-  {
-    title: "Easy returns",
-    copy: "30 days to live with it",
-    icon: "return",
-  },
-  {
-    title: "Secure checkout",
-    copy: "Encrypted, always",
-    icon: "shield",
-  },
-  {
-    title: "Financing options",
-    copy: "Flexible monthly plans",
-    icon: "card",
-  },
-];
-
-export function TrustStrip({ items = PREVIEW_ITEMS }: { items?: TrustItem[] }) {
+export function TrustStrip({ items }: { items: TrustItem[] }) {
   if (items.length === 0) {
     return null;
   }
 
   return (
-    <section className="zf-trust" id="trust" aria-label="Store guarantees">
+    <section className="zf-trust" id="trust" aria-label="Store information">
       <div className="zf-container">
         <div className="zf-trust__grid">
           {items.map((item) => {

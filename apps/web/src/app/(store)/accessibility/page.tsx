@@ -1,12 +1,15 @@
+import type { Metadata } from "next";
 import { PlaceholderPage } from "@/components/storefront/placeholder-page";
+import { placeholderPageMetadata } from "@/lib/pageMetadata";
 
 export const instant = false;
 
+export const metadata: Metadata = placeholderPageMetadata(
+  "accessibility",
+  "Accessibility",
+  "Accessibility information for Zayn Furnishings is being prepared and will be published when available.",
+);
+
 export default function AccessibilityPage() {
-  return (
-    <PlaceholderPage
-      title="Accessibility"
-      body="We are building this storefront to WCAG 2.1 AA — our accessibility statement ships with launch."
-    />
-  );
+  return <PlaceholderPage title="Accessibility" />;
 }

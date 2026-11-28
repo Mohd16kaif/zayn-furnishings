@@ -242,6 +242,6 @@ export const config = {
   matcher: [
     "/admin",
     "/admin/:path*",
-    "/((?!api|_next/static|_next/image|admin|design-preview|.*\\..*).*)",
+    "/((?!api|_next/static|_next/image|admin|.*\\..*).*)",
   ],
 };

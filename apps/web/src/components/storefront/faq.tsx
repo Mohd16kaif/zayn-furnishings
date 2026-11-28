@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { faqs as previewFaqs } from "@/app/design-preview/preview-data";
 import { Reveal } from "@/components/motion/reveal";
 
 export type FaqItem = {
@@ -9,17 +8,22 @@ export type FaqItem = {
   answer: string;
 };
 
-const PREVIEW_FAQS: FaqItem[] = previewFaqs.map((faq) => ({
-  question: faq.question,
-  answer: faq.answer,
-}));
-
-export function Faq({ faqs = PREVIEW_FAQS }: { faqs?: FaqItem[] }) {
+export function Faq({
+  faqs,
+  email,
+  phone,
+}: {
+  faqs: FaqItem[];
+  email: string;
+  phone: string;
+}) {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   if (faqs.length === 0) {
     return null;
   }
+
+  const phoneHref = phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : null;
 
   return (
     <section className="zf-section" id="faq" aria-labelledby="faq-title">
@@ -31,13 +35,17 @@ export function Faq({ faqs = PREVIEW_FAQS }: { faqs?: FaqItem[] }) {
               Questions, answered quietly.
             </h2>
             <p className="zf-lede">
-              Everything you need to feel confident before, during, and after
-              delivery. Still wondering about something? Our team is a note
-              away.
+              Browse the questions below.
             </p>
-            <a className="zf-btn zf-btn--ghost" href="mailto:hello@zaynfurnishings.example">
-              Ask a question
-            </a>
+            {email ? (
+              <a className="zf-btn zf-btn--ghost" href={`mailto:${email}`}>
+                Ask a question
+              </a>
+            ) : phoneHref ? (
+              <a className="zf-btn zf-btn--ghost" href={phoneHref}>
+                Call us
+              </a>
+            ) : null}
           </Reveal>
 
           <Reveal className="zf-faq__list" variant="fade" delay={0.06}>

@@ -186,7 +186,7 @@ export function LoginForm({
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="mt-2 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10"
-              placeholder="owner@example.com"
+              placeholder="Email address"
             />
           </div>
 

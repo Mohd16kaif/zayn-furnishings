@@ -9,6 +9,7 @@ import {
   pieceCountLabel,
 } from "@/lib/catalogFilters";
 import { getCategories, getProducts } from "@/lib/publicApi";
+import { buildPageMetadata } from "@/lib/pageMetadata";
 import { ActiveFilters } from "@/components/storefront/active-filters";
 import { CatalogFilterPanel } from "@/components/storefront/catalog-filters";
 import { CatalogResults } from "@/components/storefront/catalog-results";
@@ -17,20 +18,11 @@ import { EmptyState } from "@/components/storefront/empty-state";
 
 export const instant = false;
 
-const description =
-  "Discover the newest furniture and fresh arrivals at Zayn Furnishings.";
-
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPageMetadata({
   title: "New Arrivals",
-  description,
-  alternates: { canonical: "/new" },
-  openGraph: {
-    title: "New Arrivals",
-    description,
-    url: "/new",
-    type: "website",
-  },
-};
+  description: "Browse the newest furniture arrivals at Zayn Furnishings.",
+  path: "/new",
+});
 
 type NewArrivalsPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;

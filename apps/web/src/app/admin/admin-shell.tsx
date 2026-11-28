@@ -62,7 +62,7 @@ export function AdminShell({
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">
               Zayn Furnishings
             </p>
-            <h1 className="mt-1 text-xl font-semibold">Admin</h1>
+            <p className="mt-1 text-xl font-semibold">Admin</p>
           </div>
 
           <nav className="mt-8 space-y-1" aria-label="Admin navigation">

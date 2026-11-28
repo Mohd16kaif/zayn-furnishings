@@ -9,6 +9,7 @@ import {
   pieceCountLabel,
 } from "@/lib/catalogFilters";
 import { getCategories, getProducts } from "@/lib/publicApi";
+import { buildPageMetadata } from "@/lib/pageMetadata";
 import { ActiveFilters } from "@/components/storefront/active-filters";
 import { CatalogFilterPanel } from "@/components/storefront/catalog-filters";
 import { CatalogResults } from "@/components/storefront/catalog-results";
@@ -17,20 +18,11 @@ import { EmptyState } from "@/components/storefront/empty-state";
 
 export const instant = false;
 
-const description =
-  "Shop reduced furniture and limited-time savings at Zayn Furnishings.";
-
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPageMetadata({
   title: "Sale",
-  description,
-  alternates: { canonical: "/sale" },
-  openGraph: {
-    title: "Sale",
-    description,
-    url: "/sale",
-    type: "website",
-  },
-};
+  description: "Shop furniture currently on sale at Zayn Furnishings.",
+  path: "/sale",
+});
 
 type SalePageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;

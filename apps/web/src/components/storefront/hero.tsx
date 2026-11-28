@@ -18,17 +18,6 @@ export type HeroSlide = {
   image?: string | null;
 };
 
-const PREVIEW_SLIDE: HeroSlide = {
-  eyebrow: "The Winter Collection · 2026",
-  title: "Furniture made to be lived in.",
-  subtitle:
-    "Thoughtful silhouettes, honest materials, and a quiet sense of warmth. Designed for the way life actually unfolds at home.",
-  buttonText: "Shop the collection",
-  buttonLink: "#featured",
-  secondaryText: "Book a design consult",
-  secondaryLink: "#consultation",
-};
-
 const AUTO_ADVANCE_MS = 7000;
 
 function HeroCopy({ slide, index }: { slide: HeroSlide; index: number }) {
@@ -66,21 +55,9 @@ function HeroCopy({ slide, index }: { slide: HeroSlide; index: number }) {
  * Homepage hero. Renders statically for a single slide; with two or more it
  * crossfades on a 7s timer that pauses on hover/focus and is disabled when
  * the visitor prefers reduced motion.
- *
- * `image` is used by the design preview (single slide); `slides` takes
- * precedence and is used by the live homepage.
  */
-export function Hero({
-  image,
-  slides,
-}: {
-  image?: string | null;
-  slides?: HeroSlide[];
-}) {
-  const items =
-    slides && slides.length > 0
-      ? slides
-      : [{ ...PREVIEW_SLIDE, image: image ?? null }];
+export function Hero({ slides }: { slides: HeroSlide[] }) {
+  const items = slides;
   const count = items.length;
   const reduceMotion = useReducedMotion();
   const [active, setActive] = useState(0);
@@ -107,6 +84,10 @@ export function Hero({
 
     return () => window.clearInterval(timer);
   }, [count, paused, reduceMotion]);
+
+  if (count === 0) {
+    return null;
+  }
 
   const activeIndex = active % count;
   const slide = items[activeIndex];

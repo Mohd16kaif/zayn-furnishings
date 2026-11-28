@@ -15,6 +15,7 @@ import {
   PUBLIC_CATEGORIES_TAG,
   type ProductQuery,
 } from "@/lib/publicApi";
+import { buildPageMetadata, titleSegment } from "@/lib/pageMetadata";
 import { ActiveFilters } from "@/components/storefront/active-filters";
 import { CatalogFilterPanel } from "@/components/storefront/catalog-filters";
 import { CatalogResults } from "@/components/storefront/catalog-results";
@@ -23,15 +24,27 @@ import { EmptyState } from "@/components/storefront/empty-state";
 
 export const instant = false;
 
-export const metadata: Metadata = {
-  title: "Search",
-  description: "Search the Zayn Furnishings catalog.",
-  robots: { index: false, follow: true },
-};
-
 type SearchPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
+
+export async function generateMetadata({
+  searchParams,
+}: SearchPageProps): Promise<Metadata> {
+  const rawSearch = await searchParams;
+  const q = firstParam(rawSearch.q).slice(0, 200).trim();
+  const title = q ? titleSegment(`Search: ${q}`) : "Search";
+  const description = q
+    ? `Search results for "${q}" in the Zayn Furnishings catalog.`
+    : "Search the Zayn Furnishings catalog for furniture by room, category, material, and availability.";
+
+  return buildPageMetadata({
+    title,
+    description,
+    path: "/search",
+    noindex: true,
+  });
+}
 
 /**
  * Cache the catalog reads so instant-navigation validation does not see

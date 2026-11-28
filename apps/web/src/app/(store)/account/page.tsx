@@ -5,13 +5,16 @@ import { fetchCustomerOrders } from "@/lib/orderServer";
 import { EMPTY_ORDER_LIST } from "@/lib/orderTypes";
 import { AccountClient } from "@/components/storefront/account-client";
 import { SignIn } from "@/components/storefront/sign-in";
+import { buildPageMetadata } from "@/lib/pageMetadata";
 
 export const instant = false;
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPageMetadata({
   title: "Account",
-  robots: { index: false, follow: false },
-};
+  description: "Sign in to view your Zayn Furnishings account and orders.",
+  path: "/account",
+  noindex: true,
+});
 
 export default async function AccountPage() {
   const customer = await getCurrentCustomer();
@@ -35,7 +38,7 @@ export default async function AccountPage() {
               <h1 className="zf-account__title">Sign in to your account</h1>
               <p className="zf-lede">
                 Use the phone number on your orders. We will text you a
-                one-time code — no password to remember.
+                one-time code. No password to remember.
               </p>
             </div>
             <SignIn heading="Account sign in" />

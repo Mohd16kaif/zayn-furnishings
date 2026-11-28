@@ -136,7 +136,7 @@ export function ContentLinkPicker({
               setCustom(event.target.value);
               onChange(event.target.value.trim() || null);
             }}
-            placeholder="/c/sofas or https://example.com"
+            placeholder="/c/sofas or full URL"
             className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 disabled:bg-stone-100 disabled:text-stone-500"
             aria-invalid={Boolean(linkError || fieldError)}
           />

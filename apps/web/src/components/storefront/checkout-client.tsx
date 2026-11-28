@@ -725,6 +725,7 @@ export function CheckoutClient() {
     return (
       <section className="zf-checkout">
         <div className="zf-container">
+          <h1 className="zf-sr-only">Checkout</h1>
           <p className="zf-checkout__loading" role="status">
             Your cart is empty. Returning to your cart…
           </p>
@@ -737,6 +738,7 @@ export function CheckoutClient() {
     return (
       <section className="zf-checkout">
         <div className="zf-container">
+          <h1 className="zf-sr-only">Checkout</h1>
           <p className="zf-checkout__loading" role="status">
             Checking your cart…
           </p>
@@ -834,7 +836,7 @@ export function CheckoutClient() {
         </nav>
 
         <div className="zf-checkout__head">
-          <p className="zf-eyebrow">Secure checkout</p>
+          <p className="zf-eyebrow">Checkout</p>
           <h1 className="zf-checkout__title">Checkout</h1>
         </div>
 

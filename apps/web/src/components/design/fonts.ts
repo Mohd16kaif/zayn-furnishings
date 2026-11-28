@@ -1,6 +1,6 @@
 import { Cormorant_Garamond, Jost } from "next/font/google";
 
-/** Theme fonts shared by the storefront and the design preview layouts. */
+/** Theme fonts shared by the storefront and admin layouts. */
 export const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
